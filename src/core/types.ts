@@ -30,11 +30,14 @@ export const JACK_TRUMPS: Card[] = [
   { suit: 'DIAMONDS', rank: 'JACK', id: 'DIAMONDS_JACK' },
 ];
 
+export type GamePhase = 'LOBBY' | 'PLAYING' | 'ROUND_OVER' | 'GAME_OVER';
+
 export interface Player {
   id: number;
   name: string;
   hand: Card[];
   team: 0 | 1;
+  isBot?: boolean;
 }
 
 export interface GameState {
@@ -61,4 +64,5 @@ export interface GameState {
   roundEndTime?: number;
   spectators: { id: string, name: string }[];
   creatorName?: string;
+  lastError?: { message: string; id: number } | null;
 }

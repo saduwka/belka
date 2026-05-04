@@ -51,7 +51,7 @@ export const WaitingRoom = ({
                 key={idx} 
                 player={players[idx]} 
                 isMe={myPlayerIndex === idx}
-                isReady={readyPlayers[idx] || players[idx]?.isBot}
+                isReady={Boolean(readyPlayers[idx] || players[idx]?.isBot)}
                 onTake={() => onTakeSlot(idx)}
               />
             ))}
@@ -64,7 +64,7 @@ export const WaitingRoom = ({
                 key={idx} 
                 player={players[idx]} 
                 isMe={myPlayerIndex === idx}
-                isReady={readyPlayers[idx] || players[idx]?.isBot}
+                isReady={Boolean(readyPlayers[idx] || players[idx]?.isBot)}
                 onTake={() => onTakeSlot(idx)}
               />
             ))}
