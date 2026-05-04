@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useGameStore } from './store/gameStore'
 import { useMultiplayerStore } from './store/multiplayerStore'
+import { getBestBotMove } from './core/engine'
 import { Card } from './components/Card'
 import { PlayerInfo } from './components/PlayerInfo'
 import { TableCard } from './components/TableCard'
@@ -51,7 +52,7 @@ function App() {
     }
   }, [table.length, isTurboMode]);
 
-  // Скрипт авто-игры
+  // Скрипт авто-игры для игрока
   useEffect(() => {
     if (!isAutoPlay) return;
 
@@ -59,11 +60,8 @@ function App() {
       const delay = isTurboMode ? 0 : 1000;
       const timer = setTimeout(() => {
         const myHand = players[myPlayerIndex].hand;
-        const played = useGameStore.getState().playedSuits;
-        import('./core/engine').then(({ getBestBotMove }) => {
-          const bestCard = getBestBotMove(myHand, table, trumpSuit, played);
-          if (bestCard) playCard(myPlayerIndex, bestCard.id);
-        });
+        const bestCard = getBestBotMove(myHand, table, trumpSuit, playedSuits);
+        if (bestCard) playCard(myPlayerIndex, bestCard.id);
       }, delay);
       return () => clearTimeout(timer);
     }
@@ -74,7 +72,7 @@ function App() {
         setReady(myPlayerIndex);
       }
     }
-  }, [isAutoPlay, phase, currentPlayerIndex, myPlayerIndex, table.length, players, trumpSuit, votingState, readyPlayers, isTurboMode]);
+  }, [isAutoPlay, phase, currentPlayerIndex, myPlayerIndex, table.length, players, trumpSuit, votingState, readyPlayers, isTurboMode, playCard]);
 
   useEffect(() => {
     if (roundEndTime) {

@@ -125,8 +125,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
           // Хост запускает новый раунд, если все готовы
           if (normalizedState.phase === 'ROUND_OVER' && normalizedState.creatorName?.trim() === cleanName) {
-            const allReady = normalizedState.players.every((p: Player) => normalizedState.readyPlayers && normalizedState.readyPlayers[p.id]);
-            if (allReady && !isResetting && (!normalizedState.votingState || normalizedState.votingState.result)) {
+            const readyCount = Object.keys(normalizedState.readyPlayers || {}).filter(k => k !== '_init').length;
+            if (readyCount === 4 && !isResetting && (!normalizedState.votingState || normalizedState.votingState.result)) {
                isResetting = true;
                const delay = get().isTurboMode ? 50 : 500;
                setTimeout(() => {
@@ -205,6 +205,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
         playedSuits: [], isMultiplayer: false, myPlayerIndex: 0, trumpMapping: mapping,
         eggsCount: 0, readyPlayers: {}, spectators: [], creatorName: cleanName
       });
+
+      // Если в одиночной игре первый ход у бота — запускаем его
+      if (starterIndex !== 0) {
+        const delay = get().isTurboMode ? 0 : 1000;
+        setTimeout(() => {
+          const st = get();
+          const best = getBestBotMove(st.players[starterIndex].hand, [], st.trumpSuit, st.playedSuits);
+          if (best) get().playCard(starterIndex, best.id);
+        }, delay);
+      }
     }
   },
 
@@ -347,19 +357,36 @@ export const useGameStore = create<GameStore>((set, get) => ({
         if (state.isMultiplayer) firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), finalUpdate);
         else {
           set(finalUpdate);
-          if (!isRoundOver && winnerIndex !== 0) { const st = get(); const best = getBestBotMove(st.players[winnerIndex].hand, [], st.trumpSuit, st.playedSuits); if (best) get().playCard(winnerIndex, best.id); }
+          const st = get();
+          if (st.phase === 'PLAYING' && st.currentPlayerIndex !== 0 && st.currentPlayerIndex !== -1) {
+            const delay = st.isTurboMode ? 0 : 1000;
+            setTimeout(() => {
+              const currentSt = get();
+              const best = getBestBotMove(currentSt.players[currentSt.currentPlayerIndex].hand, [], currentSt.trumpSuit, currentSt.playedSuits);
+              if (best) get().playCard(currentSt.currentPlayerIndex, best.id);
+            }, delay);
+          }
         }
-      }, 3000);
+      }, state.isTurboMode ? 100 : 3000);
     } else { nextState.currentPlayerIndex = (state.currentPlayerIndex + 1) % 4; }
     
-    if (state.isMultiplayer) { 
-      firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), nextState); 
+    const { isMultiplayer, roomId, isTurboMode } = get();
+    
+    if (isMultiplayer) { 
+      firebaseUpdate(ref(db, `rooms/${roomId}/state`), nextState); 
     } else {
       set(nextState);
-      const { phase, currentPlayerIndex, myPlayerIndex, table, isTurboMode } = get();
-      if (phase === 'PLAYING' && currentPlayerIndex !== -1 && currentPlayerIndex !== 0 && table.length < 4) {
-        const delay = isTurboMode ? 0 : 1000;
-        setTimeout(() => { const st = get(); const best = getBestBotMove(st.players[st.currentPlayerIndex].hand, st.table, st.trumpSuit, st.playedSuits); if (best) get().playCard(st.currentPlayerIndex, best.id); }, delay);
+      // В одиночной игре проверяем, не ход ли сейчас бота
+      const st = get();
+      if (st.phase === 'PLAYING' && st.currentPlayerIndex !== 0 && st.currentPlayerIndex !== -1 && st.table.length < 4) {
+        const delay = st.isTurboMode ? 0 : 1000;
+        setTimeout(() => {
+          const currentSt = get();
+          if (currentSt.currentPlayerIndex === st.currentPlayerIndex) {
+            const best = getBestBotMove(currentSt.players[currentSt.currentPlayerIndex].hand, currentSt.table, currentSt.trumpSuit, currentSt.playedSuits);
+            if (best) get().playCard(currentSt.currentPlayerIndex, best.id);
+          }
+        }, delay);
       }
     }
   },
@@ -398,9 +425,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     
     let nextState: Partial<GameState> = { readyPlayers: newReady };
-    if (Object.keys(state.readyPlayers).length === 0 && !state.roundEndTime) nextState.roundEndTime = Date.now() + 15000;
+    const readyCount = Object.keys(newReady).filter(k => k !== '_init').length;
     
-    if (Object.keys(newReady).length === 4) { 
+    if (readyCount === 1 && !state.roundEndTime) nextState.roundEndTime = Date.now() + 15000;
+    
+    if (readyCount === 4) { 
       if (!state.isMultiplayer) {
         get().resetRound(); 
         return; 
@@ -438,11 +467,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
       readyPlayers: { _init: true }, // Используем заглушку, чтобы Firebase не удалял пустой объект
       roundEndTime: null as any,
     };
-    if (state.isMultiplayer && state.creatorName?.trim() === localStorage.getItem('belka_player_name')?.trim()) firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), nextState);
-    else if (!state.isMultiplayer) {
-      set(nextState);
+    if (state.isMultiplayer && state.creatorName?.trim() === localStorage.getItem('belka_player_name')?.trim()) {
+      firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), nextState);
+    } else if (!state.isMultiplayer) {
+      set({ ...nextState, readyPlayers: {} });
       if (starterIndex !== 0) {
-        setTimeout(() => { const st = get(); const best = getBestBotMove(st.players[starterIndex].hand, st.table, st.trumpSuit, st.playedSuits); if (best) get().playCard(starterIndex, best.id); }, 1000);
+        const delay = state.isTurboMode ? 0 : 1000;
+        setTimeout(() => { 
+          const st = get(); 
+          const best = getBestBotMove(st.players[starterIndex].hand, st.table, st.trumpSuit, st.playedSuits); 
+          if (best) get().playCard(starterIndex, best.id); 
+        }, delay);
       }
     }
   },
