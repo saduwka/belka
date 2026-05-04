@@ -11,10 +11,10 @@ const getSuitSymbol = (suit: string) => {
 };
 
 const getRankDisplay = (rank: string) => {
-  if (rank === 'JACK') return 'В';
-  if (rank === 'QUEEN') return 'Д';
-  if (rank === 'KING') return 'К';
-  if (rank === 'ACE') return 'Т';
+  if (rank === 'JACK') return 'J';
+  if (rank === 'QUEEN') return 'Q';
+  if (rank === 'KING') return 'K';
+  if (rank === 'ACE') return 'A';
   return rank;
 };
 

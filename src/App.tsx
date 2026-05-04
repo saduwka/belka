@@ -213,6 +213,8 @@ function App() {
   const myTeam = myPlayer ? myPlayer.team : 0;
   const otherTeam = 1 - myTeam;
   const isMyTurn = myPlayerIndex !== -1 && currentPlayerIndex === myPlayerIndex && phase === 'PLAYING';
+  const myName = (localStorage.getItem('belka_player_name') || '').trim();
+  const isAdmin = myName.toLowerCase() === 'sadu';
 
   // Не показываем масти игроков в первом раунде, пока не вышел валет крести
   const hasJackAppeared = table.some(c => c.id === 'CLUBS_JACK');
@@ -242,6 +244,7 @@ function App() {
         onTurboToggle={toggleTurboMode}
         onReset={() => isMultiplayer ? resetRound() : initGame()}
         onMenu={() => setLobbyView(true)}
+        isAdmin={isAdmin}
       />
 
       <GameHeader 
