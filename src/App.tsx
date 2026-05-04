@@ -29,7 +29,7 @@ function App() {
     initGame, playCard, resetRound, isMultiplayer, myPlayerIndex, roomId, trumpMapping,
     eggsCount, votingState, submitVote, readyPlayers, roundEndTime, setReady,
     spectators, takeSlot, toggleLobbyReady, startGame, isAutoPlay, toggleAutoPlay,
-    isFirstRound, playedSuits, isTurboMode, toggleTurboMode, logs
+    isFirstRound, playedSuits, isTurboMode, toggleTurboMode, logs, forceSync, addLog
   } = useGameStore();
 
   const { createRoom, joinRoom } = useMultiplayerStore();
@@ -72,10 +72,9 @@ function App() {
       return () => clearTimeout(timer);
     }
 
-    // АВТО-СПАСАТЕЛЬ: Если у всех 0 карт, но раунд не кончился
     if (players.length === 4 && players.every(p => p.hand.length === 0) && phase === 'PLAYING') {
       if (firstHuman?.name.trim() === myName) {
-        getBestBotMove([], [], null, []); // Просто для импорта
+        addLog("🆘 Авто-спасение: раунд завершен принудительно");
         resetRound();
       }
     }
@@ -232,6 +231,7 @@ function App() {
         onTurboToggle={toggleTurboMode}
         onReset={() => isMultiplayer ? resetRound() : initGame()}
         onMenu={() => setLobbyView(true)}
+        onSync={forceSync}
       />
 
       <GameHeader 

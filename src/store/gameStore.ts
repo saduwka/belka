@@ -23,6 +23,7 @@ interface GameStore extends GameState {
   toggleAutoPlay: () => void;
   toggleTurboMode: () => void;
   addLog: (msg: string) => void;
+  forceSync: () => void;
   logs: string[];
 }
 
