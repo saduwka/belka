@@ -52,7 +52,7 @@ export const PlayerInfo = ({ name, relation, active, cardsCount, assignedSuit, p
     
   const label = isMe ? 'ВЫ' : 
                 relation === 'PARTNER' ? 'ПАРТНЕР' : 
-                relation === 'ENEMY' ? 'ВРАГ' : 
+                relation === 'ENEMY' ? 'СОПЕРНИК' : 
                 relation === 'TEAM_A' ? 'КОМАНДА А' : 'КОМАНДА Б';
 
   return (

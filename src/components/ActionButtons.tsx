@@ -19,13 +19,15 @@ export const ActionButtons = ({ isMultiplayer, isAutoPlay, onAutoPlayToggle, isT
       >
         <span className="text-xl">🤖</span>
       </button>
-      <button 
-        onClick={onTurboToggle} 
-        className={`w-12 h-12 backdrop-blur-xl border border-white/10 rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-all ${isTurboMode ? 'bg-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.5)]' : 'bg-black/40'}`}
-        title="Турбо-режим (для тестов)"
-      >
-        <span className="text-xl">⚡</span>
-      </button>
+      {isAdmin && (
+        <button 
+          onClick={onTurboToggle} 
+          className={`w-12 h-12 backdrop-blur-xl border border-white/10 rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-all ${isTurboMode ? 'bg-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.5)]' : 'bg-black/40'}`}
+          title="Турбо-режим (для тестов)"
+        >
+          <span className="text-xl">⚡</span>
+        </button>
+      )}
       
       {isAdmin && (
         <button 
