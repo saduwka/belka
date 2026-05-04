@@ -52,33 +52,44 @@ function App() {
     }
   }, [table.length, isTurboMode]);
 
-  // Глобальный контроллер ботов (Fail-safe)
-  // Если сейчас ход бота, и мы — первый живой игрок (Хост/Судья), мы заставляем бота ходить.
+  // СТОРОЖЕВОЙ ТАЙМЕР (Watchdog) - делает игру "самовосстанавливающейся"
   useEffect(() => {
-    if (phase !== 'PLAYING' || table.length >= 4) return;
-    
-    // Находим первого живого игрока
-    const firstHuman = players.find(p => !p.isBot);
-    const myName = (localStorage.getItem('belka_player_name') || 'Игрок').trim();
-    
-    // Если я — "Судья" и сейчас ход бота
-    if (firstHuman?.name.trim() === myName && players[currentPlayerIndex]?.isBot) {
-      const delay = isTurboMode ? 50 : 1000;
-      const timer = setTimeout(() => {
+    const interval = setInterval(() => {
+      if (phase === 'LOBBY' || phase === 'GAME_OVER') return;
+
+      const myName = (localStorage.getItem('belka_player_name') || 'Игрок').trim();
+      const firstHuman = players.find(p => !p.isBot);
+      
+      // Только "Судья" (первый живой игрок) принимает решения
+      if (firstHuman?.name.trim() !== myName) return;
+
+      // 1. Если на столе 4 карты, но ход всё еще -1 (зависло удаление)
+      if (table.length === 4 && currentPlayerIndex === -1) {
+        addLog("🛡️ Watchdog: очистка застрявшего стола");
+        forceSync();
+      }
+
+      // 2. Если ход бота, но он ничего не делает
+      if (phase === 'PLAYING' && players[currentPlayerIndex]?.isBot && table.length < 4) {
+        // Мы не вызываем forceSync сразу, даем боту время. 
+        // Но если застряло - вызываем ход бота напрямую.
         const botHand = players[currentPlayerIndex].hand;
         const bestCard = getBestBotMove(botHand, table, trumpSuit, playedSuits);
-        if (bestCard) playCard(currentPlayerIndex, bestCard.id);
-      }, delay);
-      return () => clearTimeout(timer);
-    }
+        if (bestCard) {
+          addLog(`🛡️ Watchdog: подталкиваем бота [${currentPlayerIndex}]`);
+          playCard(currentPlayerIndex, bestCard.id);
+        }
+      }
 
-    if (players.length === 4 && players.every(p => p.hand.length === 0) && phase === 'PLAYING') {
-      if (firstHuman?.name.trim() === myName) {
-        addLog("🆘 Авто-спасение: раунд завершен принудительно");
+      // 3. Если у всех 0 карт, но фаза не сменилась
+      if (phase === 'PLAYING' && players.length === 4 && players.every(p => p.hand.length === 0)) {
+        addLog("🛡️ Watchdog: принудительное завершение раунда");
         resetRound();
       }
-    }
-  }, [phase, currentPlayerIndex, table.length, players, isMultiplayer, isTurboMode, playCard, trumpSuit, playedSuits, resetRound]);
+    }, 4000); // Проверка каждые 4 секунды
+
+    return () => clearInterval(interval);
+  }, [phase, currentPlayerIndex, table.length, players, trumpSuit, playedSuits, forceSync, playCard, resetRound, addLog]);
 
   // Скрипт авто-игры для игрока
   useEffect(() => {
