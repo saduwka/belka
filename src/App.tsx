@@ -347,6 +347,15 @@ function App() {
           onLeave={() => setLobbyView(true)}
         />
       )}
+
+      {/* Лента событий (для дебага) */}
+      <div className="game-logs">
+        {logs.slice(0, 5).map((log, i) => (
+          <div key={i} className="log-item">{log}</div>
+        ))}
+      </div>
+
+      {isCollecting && <div className="collecting-overlay">Собираем карты...</div>}
     </div>
   )
 }
