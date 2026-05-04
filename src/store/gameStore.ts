@@ -519,7 +519,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     get().addLog("🔄 Принудительная синхронизация...");
     
     if (state.table.length === 4) {
-      const winnerIndex = determineTrickWinner(state.table, state.trumpSuit || 'CLUBS', state.firstPlayerInTrick);
+      const leadSuit = state.table[0].suit;
+      const winnerIndex = determineTrickWinner(state.table, state.firstPlayerInTrick, leadSuit, state.trumpSuit || 'CLUBS');
       const trickPoints = state.table.reduce((sum, c) => sum + CARD_POINTS[c.rank], 0);
       const newScores: [number, number] = [...state.scores];
       newScores[state.players[winnerIndex].team] += trickPoints;
