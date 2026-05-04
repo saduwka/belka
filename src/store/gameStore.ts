@@ -22,6 +22,8 @@ interface GameStore extends GameState {
   updateFromRemote: (newState: Partial<GameState>) => void;
   toggleAutoPlay: () => void;
   toggleTurboMode: () => void;
+  addLog: (msg: string) => void;
+  logs: string[];
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -48,6 +50,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   creatorName: '',
   isAutoPlay: false,
   isTurboMode: false,
+  logs: [],
+
+  addLog: (msg: string) => set(state => ({ logs: [msg, ...state.logs].slice(0, 10) })),
 
   toggleTurboMode: () => set(state => ({ isTurboMode: !state.isTurboMode })),
 
@@ -278,6 +283,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const cardIndex = player.hand.findIndex(c => c.id === cardId);
     if (cardIndex === -1) return;
     const card = player.hand[cardIndex];
+
+    get().addLog(`${player.name} походил ${card.rank} ${card.suit}`);
+
     const validation = validateMove(card, player.hand, state.table, state.trumpSuit, state.playedSuits);
     if (!validation.valid) {
       if (playerIndex === state.myPlayerIndex) set({ lastError: { message: validation.reason || 'Недопустимый ход', id: Date.now() } });
@@ -311,6 +319,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const firstHuman = currentState.players.find(p => !p.isBot);
         
         if (currentState.isMultiplayer && firstHuman?.name.trim() !== myName) return;
+        get().addLog(`Судья ${myName} обрабатывает взятку...`);
+
+        const winnerName = currentState.players[winnerIndex].name;
+        const trickPoints = currentState.table.reduce((sum, c) => sum + CARD_POINTS[c.rank], 0);
+        get().addLog(`Взятку забрал ${winnerName} (+${trickPoints} очков)`);
 
         const winnerTeam = currentState.players[winnerIndex].team;
         const newScores: [number, number] = [...currentState.scores];
@@ -371,7 +384,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
           }
         }
       }, state.isTurboMode ? 100 : 3000);
-    } else { nextState.currentPlayerIndex = (state.currentPlayerIndex + 1) % 4; }
+    } else { 
+      nextState.currentPlayerIndex = (state.currentPlayerIndex + 1) % 4; 
+      const nextName = state.players[nextState.currentPlayerIndex].name;
+      get().addLog(`Очередь игрока: ${nextName}`);
+    }
     
     const { isMultiplayer, roomId, isTurboMode } = get();
     

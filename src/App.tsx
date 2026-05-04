@@ -29,7 +29,7 @@ function App() {
     initGame, playCard, resetRound, isMultiplayer, myPlayerIndex, roomId, trumpMapping,
     eggsCount, votingState, submitVote, readyPlayers, roundEndTime, setReady,
     spectators, takeSlot, toggleLobbyReady, startGame, isAutoPlay, toggleAutoPlay,
-    isFirstRound, playedSuits, isTurboMode, toggleTurboMode
+    isFirstRound, playedSuits, isTurboMode, toggleTurboMode, logs
   } = useGameStore();
 
   const { createRoom, joinRoom } = useMultiplayerStore();

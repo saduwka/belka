@@ -85,6 +85,33 @@ body {
 .animate-play-2 { animation: play-card-top 0.4s ease-out; }
 .animate-play-3 { animation: play-card-right 0.4s ease-out; }
 
+.game-logs {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  max-width: 250px;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: white;
+  pointer-events: none;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.log-item {
+  opacity: 0.8;
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 0.8; transform: translateY(0); }
+}
+
 .collecting-trick-0 { animation: collect-to-0 0.6s ease-in forwards; }
 .collecting-trick-1 { animation: collect-to-1 0.6s ease-in forwards; }
 .collecting-trick-2 { animation: collect-to-2 0.6s ease-in forwards; }
