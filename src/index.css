@@ -1,0 +1,86 @@
+:root {
+  --color-background-primary: #ffffff;
+  --color-background-secondary: #f8fafc;
+  --color-background-tertiary: #f1f5f9;
+  --color-background-success: #ecfdf5;
+  --color-background-info: #eff6ff;
+  --color-border-primary: #e2e8f0;
+  --color-border-secondary: #cbd5e1;
+  --color-border-tertiary: #94a3b8;
+  --color-border-success: #10b981;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-success: #059669;
+  --color-text-info: #2563eb;
+  --border-radius-sm: 4px;
+  --border-radius-md: 8px;
+  --border-radius-lg: 12px;
+  --border-radius-xl: 24px;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #020617;
+  color: var(--color-text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+}
+
+#root {
+  width: 100%;
+}
+
+@keyframes deal-card {
+  from {
+    transform: translate(-50%, -50%) scale(0.5);
+    opacity: 0;
+  }
+  to {
+    transform: translate(0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes play-card-bottom {
+  from { transform: translateY(100px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes play-card-top {
+  from { transform: translateY(-100px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes play-card-left {
+  from { transform: translateX(-100px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes play-card-right {
+  from { transform: translateX(100px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes collect-to-0 { to { transform: translateY(400px) scale(0); opacity: 0; } }
+@keyframes collect-to-1 { to { transform: translateX(-500px) scale(0); opacity: 0; } }
+@keyframes collect-to-2 { to { transform: translateY(-400px) scale(0); opacity: 0; } }
+@keyframes collect-to-3 { to { transform: translateX(500px) scale(0); opacity: 0; } }
+
+.animate-deal {
+  animation: deal-card 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) backwards;
+}
+
+.animate-play-0 { animation: play-card-bottom 0.4s ease-out; }
+.animate-play-1 { animation: play-card-left 0.4s ease-out; }
+.animate-play-2 { animation: play-card-top 0.4s ease-out; }
+.animate-play-3 { animation: play-card-right 0.4s ease-out; }
+
+.collecting-trick-0 { animation: collect-to-0 0.6s ease-in forwards; }
+.collecting-trick-1 { animation: collect-to-1 0.6s ease-in forwards; }
+.collecting-trick-2 { animation: collect-to-2 0.6s ease-in forwards; }
+.collecting-trick-3 { animation: collect-to-3 0.6s ease-in forwards; }
