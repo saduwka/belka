@@ -125,10 +125,15 @@ const SlotCard = ({ player, isMe, isReady, onTake }: { player: Player, isMe: boo
       {isMe && <div className="absolute inset-0 bg-emerald-500/5 animate-pulse"></div>}
       
       <div className={`
-        w-12 h-12 rounded-full border-2 flex-shrink-0 flex items-center justify-center text-sm font-black transition-all duration-500
+        w-12 h-12 rounded-full border-2 flex-shrink-0 flex items-center justify-center text-sm font-black transition-all duration-500 relative
         ${isEmpty ? 'border-white/5 bg-white/5 text-white/10' : 'border-emerald-400 bg-emerald-400/20 text-emerald-400 shadow-[0_0_15px_rgba(52,211,153,0.2)]'}
       `}>
         {isEmpty ? '?' : (player?.name?.[0] || 'P').toUpperCase()}
+        {!isEmpty && player?.name?.toLowerCase() === 'sadu' && (
+          <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-lg animate-bounce drop-shadow-lg z-50">
+            👑
+          </div>
+        )}
       </div>
 
       <div className="flex-grow text-left">

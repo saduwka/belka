@@ -310,6 +310,7 @@ function App() {
                 cardsCount={players[idx]?.hand.length || 0} 
                 assignedSuit={showMapping ? trumpMapping?.[idx] : undefined} 
                 position={positions[offset]} 
+                isAdmin={players[idx]?.name.toLowerCase() === 'sadu'}
               />
               {myPlayerIndex === -1 && players[idx]?.isBot && (
                 <button 

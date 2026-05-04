@@ -41,9 +41,10 @@ interface PlayerInfoProps {
   cardsCount: number;
   assignedSuit?: Suit;
   position: 'bottom' | 'top' | 'left' | 'right';
+  isAdmin?: boolean;
 }
 
-export const PlayerInfo = ({ name, relation, active, cardsCount, assignedSuit, position }: PlayerInfoProps) => {
+export const PlayerInfo = ({ name, relation, active, cardsCount, assignedSuit, position, isAdmin }: PlayerInfoProps) => {
   const isMe = relation === 'ME';
   const bgColor = (relation === 'PARTNER' || relation === 'TEAM_A' || isMe) 
     ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' 
@@ -71,6 +72,12 @@ export const PlayerInfo = ({ name, relation, active, cardsCount, assignedSuit, p
           {assignedSuit && (
             <div className="absolute -top-1 -left-1 bg-white w-5 h-5 sm:w-7 sm:h-7 rounded-full border-2 border-slate-900 flex items-center justify-center text-[10px] sm:text-sm shadow-md z-30">
               {getSuitSymbol(assignedSuit)}
+            </div>
+          )}
+
+          {isAdmin && (
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-lg sm:text-2xl drop-shadow-lg animate-bounce z-40">
+              👑
             </div>
           )}
           
