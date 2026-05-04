@@ -36,15 +36,25 @@ export const MiniFan = ({ count, position }: { count: number, position: 'top' | 
 
 interface PlayerInfoProps {
   name: string;
-  team: number;
+  relation: 'ME' | 'PARTNER' | 'ENEMY' | 'TEAM_A' | 'TEAM_B';
   active?: boolean;
   cardsCount: number;
-  isMe?: boolean;
   assignedSuit?: Suit;
   position: 'bottom' | 'top' | 'left' | 'right';
 }
 
-export const PlayerInfo = ({ name, team, active, cardsCount, isMe, assignedSuit, position }: PlayerInfoProps) => (
+export const PlayerInfo = ({ name, relation, active, cardsCount, assignedSuit, position }: PlayerInfoProps) => {
+  const isMe = relation === 'ME';
+  const bgColor = (relation === 'PARTNER' || relation === 'TEAM_A' || isMe) 
+    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' 
+    : 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+    
+  const label = isMe ? 'ВЫ' : 
+                relation === 'PARTNER' ? 'ПАРТНЕР' : 
+                relation === 'ENEMY' ? 'ВРАГ' : 
+                relation === 'TEAM_A' ? 'КОМАНДА А' : 'КОМАНДА Б';
+
+  return (
   <div className={`flex flex-col items-center gap-1 transition-all duration-500 ${active ? 'scale-110' : 'opacity-80'}`}>
     {position === 'top' && <MiniFan count={cardsCount} position="top" />}
     
@@ -72,8 +82,9 @@ export const PlayerInfo = ({ name, team, active, cardsCount, isMe, assignedSuit,
        {position === 'right' && <MiniFan count={cardsCount} position="right" />}
     </div>
     
-    <div className={`px-2 py-0.5 rounded-full text-[8px] sm:text-[10px] font-black uppercase tracking-widest ${team === 0 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'}`}>
-      {isMe ? 'ВЫ' : (team === 0 ? 'ПАРТНЕР' : 'ВРАГ')}
+    <div className={`px-2 py-0.5 rounded-full text-[8px] sm:text-[10px] font-black uppercase tracking-widest border ${bgColor}`}>
+      {isMe ? label : `${label} • ${name}`}
     </div>
   </div>
-);
+  );
+};

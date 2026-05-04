@@ -46,18 +46,6 @@ export const GameHeader = ({
           </div>
         )}
       </div>
-      
-      <div className="absolute top-2 left-1/2 -translate-x-1/2 pointer-events-auto">
-        <PlayerInfo 
-          name={players[(myPlayerIndex + 2) % 4]?.name || '...'} 
-          team={players[(myPlayerIndex + 2) % 4]?.team || 0} 
-          active={currentPlayerIndex === (myPlayerIndex + 2) % 4} 
-          cardsCount={players[(myPlayerIndex + 2) % 4]?.hand.length || 0} 
-          assignedSuit={trumpMapping?.[(myPlayerIndex + 2) % 4]} 
-          position="top" 
-        />
-      </div>
-
       <div className="flex gap-2 items-center pointer-events-auto">
         <div className="flex gap-1">
           <div className="bg-white/5 border border-white/10 p-2 rounded-xl text-center min-w-[44px]">

@@ -5,6 +5,7 @@ import { Card } from './components/Card'
 import { PlayerInfo } from './components/PlayerInfo'
 import { TableCard } from './components/TableCard'
 import { RoundOverOverlay } from './components/RoundOverOverlay'
+import { GameOverOverlay } from './components/GameOverOverlay'
 import { GameHeader } from './components/GameHeader'
 import { Lobby } from './components/Lobby'
 import { ActionButtons } from './components/ActionButtons'
@@ -26,7 +27,8 @@ function App() {
     trumpSuit, firstPlayerInTrick, lastTrickWinnerIndex, lastError,
     initGame, playCard, resetRound, isMultiplayer, myPlayerIndex, roomId, trumpMapping,
     eggsCount, votingState, submitVote, readyPlayers, roundEndTime, setReady,
-    spectators, takeSlot, toggleLobbyReady, startGame
+    spectators, takeSlot, toggleLobbyReady, startGame, isAutoPlay, toggleAutoPlay,
+    isFirstRound, playedSuits, isTurboMode, toggleTurboMode
   } = useGameStore();
 
   const { createRoom, joinRoom } = useMultiplayerStore();
@@ -37,15 +39,42 @@ function App() {
   const [playerName, setPlayerName] = useState(localStorage.getItem('belka_player_name') || '');
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
 
   useEffect(() => {
     if (table.length === 4) {
-      const timer = setTimeout(() => setIsCollecting(true), 2500);
+      const delay = isTurboMode ? 50 : 2500;
+      const timer = setTimeout(() => setIsCollecting(true), delay);
       return () => clearTimeout(timer);
     } else {
       setIsCollecting(false);
     }
-  }, [table.length]);
+  }, [table.length, isTurboMode]);
+
+  // Скрипт авто-игры
+  useEffect(() => {
+    if (!isAutoPlay) return;
+
+    if (phase === 'PLAYING' && currentPlayerIndex === myPlayerIndex && myPlayerIndex !== -1 && table.length < 4) {
+      const delay = isTurboMode ? 0 : 1000;
+      const timer = setTimeout(() => {
+        const myHand = players[myPlayerIndex].hand;
+        const played = useGameStore.getState().playedSuits;
+        import('./core/engine').then(({ getBestBotMove }) => {
+          const bestCard = getBestBotMove(myHand, table, trumpSuit, played);
+          if (bestCard) playCard(myPlayerIndex, bestCard.id);
+        });
+      }, delay);
+      return () => clearTimeout(timer);
+    }
+
+    // В Турбо-режиме нажимаем "Готов" автоматически, чтобы тест шел быстро
+    if (phase === 'ROUND_OVER' && myPlayerIndex !== -1 && isTurboMode) {
+      if (!readyPlayers[myPlayerIndex]) {
+        setReady(myPlayerIndex);
+      }
+    }
+  }, [isAutoPlay, phase, currentPlayerIndex, myPlayerIndex, table.length, players, trumpSuit, votingState, readyPlayers, isTurboMode]);
 
   useEffect(() => {
     if (roundEndTime) {
@@ -87,21 +116,28 @@ function App() {
   };
 
   const handleCreateRoom = async () => {
+    setIsConnecting(true);
     const finalName = playerName.trim() || 'Игрок';
     localStorage.setItem('belka_player_name', finalName);
     const id = await createRoom();
     initGame(id, 0, finalName);
     setLobbyView(false);
+    setIsConnecting(false);
   };
 
   const handleJoinRoom = async (id: string) => {
+    if (!id.trim()) return;
+    setIsConnecting(true);
     const finalName = playerName.trim() || 'Игрок';
     localStorage.setItem('belka_player_name', finalName);
     const r = await joinRoom(id);
     if (r.success) {
       initGame(id, -1, finalName);
       setLobbyView(false);
+    } else {
+      setToasts(prev => [...prev, { id: Date.now(), message: r.error || 'Ошибка входа' }]);
     }
+    setIsConnecting(false);
   };
 
   if (lobbyView) {
@@ -114,6 +150,7 @@ function App() {
         onStartSingle={handleStartSingle}
         onCreateRoom={handleCreateRoom}
         onJoinRoom={handleJoinRoom}
+        isConnecting={isConnecting}
       />
     );
   }
@@ -140,19 +177,32 @@ function App() {
   const otherTeam = 1 - myTeam;
   const isMyTurn = myPlayerIndex !== -1 && currentPlayerIndex === myPlayerIndex && phase === 'PLAYING';
 
+  // Не показываем масти игроков в первом раунде, пока не вышел валет крести
+  const hasJackAppeared = table.some(c => c.id === 'CLUBS_JACK');
+  const showMapping = !isFirstRound || hasJackAppeared;
+
   return (
-    <div className="h-[100dvh] bg-[#020617] flex flex-col overflow-hidden font-sans select-none relative text-white touch-none">
+    <div className={`h-[100dvh] bg-[#020617] flex flex-col overflow-hidden font-sans select-none relative text-white touch-none ${isTurboMode ? 'turbo-active' : ''}`}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_#064e3b_0%,_#020617_70%)] opacity-40"></div>
       
       {/* Toast Overlay */}
-      <div className="fixed top-12 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-xs space-y-2 px-4">
-        {toasts.map(t => (
-          <div key={t.id} className="bg-red-500 text-white p-4 rounded-2xl shadow-2xl font-black text-center text-xs animate-in slide-in-from-top duration-300">{t.message}</div>
-        ))}
+      <div className="fixed top-12 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-xs space-y-2 px-4 pointer-events-none">
+        {toasts.map(t => {
+          const isError = t.message.includes('Ошибка') || t.message.includes('Недопустимый') || t.message.includes('Не все');
+          return (
+            <div key={t.id} className={`${isError ? 'bg-red-500' : 'bg-slate-800/90 backdrop-blur-md border border-white/10'} text-white p-4 rounded-2xl shadow-2xl font-black text-center text-[10px] uppercase tracking-widest animate-in slide-in-from-top duration-300 pointer-events-auto`}>
+              {t.message}
+            </div>
+          );
+        })}
       </div>
 
       <ActionButtons 
         isMultiplayer={isMultiplayer}
+        isAutoPlay={isAutoPlay}
+        onAutoPlayToggle={toggleAutoPlay}
+        isTurboMode={isTurboMode}
+        onTurboToggle={toggleTurboMode}
         onReset={() => isMultiplayer ? resetRound() : initGame()}
         onMenu={() => setLobbyView(true)}
       />
@@ -174,19 +224,45 @@ function App() {
       />
 
       {/* Side Players */}
-      {[1, 2, 3].map(offset => {
+      {[0, 1, 2, 3].map(offset => {
+        if (myPlayerIndex !== -1 && offset === 0) return null;
+        
         const idx = (Math.max(0, myPlayerIndex) + offset) % 4;
-        const positions: ('left' | 'top' | 'right')[] = ['left', 'top', 'right'];
+        const positions: ('bottom' | 'left' | 'top' | 'right')[] = ['bottom', 'left', 'top', 'right'];
+        const posClass = 
+          offset === 0 ? 'bottom-32 left-1/2 -translate-x-1/2' :
+          offset === 1 ? 'left-2 top-[40%] -translate-y-1/2' : 
+          offset === 2 ? 'top-20 left-1/2 -translate-x-1/2' : 
+                         'right-2 top-[40%] -translate-y-1/2';
+
+        const playerTeam = players[idx]?.team || 0;
+        let relation: 'ME' | 'PARTNER' | 'ENEMY' | 'TEAM_A' | 'TEAM_B' = 'ENEMY';
+        if (myPlayerIndex === -1) {
+          relation = playerTeam === 0 ? 'TEAM_A' : 'TEAM_B';
+        } else if (idx === myPlayerIndex) {
+          relation = 'ME';
+        } else if (playerTeam === myPlayer?.team) {
+          relation = 'PARTNER';
+        }
+
         return (
-          <div key={idx} className={`absolute ${offset === 1 ? 'left-2' : offset === 2 ? 'top-2 left-1/2 -translate-x-1/2' : 'right-2'} top-[40%] -translate-y-1/2 z-50`}>
+          <div key={idx} className={`absolute ${posClass} z-50 flex flex-col items-center gap-2`}>
              <PlayerInfo 
                 name={players[idx]?.name || '...'} 
-                team={players[idx]?.team || 0} 
+                relation={relation}
                 active={currentPlayerIndex === idx} 
                 cardsCount={players[idx]?.hand.length || 0} 
-                assignedSuit={trumpMapping?.[idx]} 
-                position={positions[offset - 1]} 
+                assignedSuit={showMapping ? trumpMapping?.[idx] : undefined} 
+                position={positions[offset]} 
               />
+              {myPlayerIndex === -1 && players[idx]?.isBot && (
+                <button 
+                  onClick={() => takeSlot(idx)}
+                  className="bg-emerald-500 text-emerald-950 px-3 py-1.5 rounded-full font-black text-[9px] uppercase tracking-widest shadow-[0_5px_15px_rgba(16,185,129,0.4)] animate-pulse hover:scale-105 transition-all"
+                >
+                  СЕСТЬ СЮДА
+                </button>
+              )}
           </div>
         );
       })}
@@ -213,8 +289,10 @@ function App() {
           </div>
         )}
         {myPlayerIndex === -1 && (
-           <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-blue-500 text-white px-6 py-2 rounded-full font-black text-[10px] uppercase tracking-widest z-50 shadow-xl">
-              РЕЖИМ ПРОСМОТРА
+           <div className="absolute -top-16 left-1/2 -translate-x-1/2 flex flex-col items-center gap-3 z-50">
+             <div className="bg-blue-500 text-white px-6 py-2 rounded-full font-black text-[10px] uppercase tracking-widest shadow-xl">
+                РЕЖИМ ПРОСМОТРА
+             </div>
            </div>
         )}
         <div className="flex justify-center items-end px-12">
@@ -239,6 +317,15 @@ function App() {
           submitVote={submitVote}
           setReady={setReady}
           resetRound={resetRound}
+        />
+      )}
+
+      {phase === 'GAME_OVER' && (
+        <GameOverOverlay 
+          eyes={eyes}
+          myTeam={myTeam}
+          otherTeam={otherTeam}
+          onLeave={() => setLobbyView(true)}
         />
       )}
     </div>

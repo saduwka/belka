@@ -84,27 +84,41 @@ export function validateMove(card: Card, hand: Card[], table: Card[], trumpSuit:
   // 1. Must follow suit if it's trump
   if (isFirstCardTrump) {
     const hasTrump = hand.some(c => isTrump(c, trumpSuit));
-    if (hasTrump && !isTrump(card, trumpSuit)) {
-      return { valid: false, reason: 'Нужно ходить козырем' };
+    if (hasTrump) {
+      if (!isTrump(card, trumpSuit)) return { valid: false, reason: 'Нужно ходить козырем' };
+      return { valid: true };
     }
-    return { valid: true };
+  } else {
+    // 2. Must follow suit if it's a regular suit
+    const hasLeadSuit = hand.some(c => c.suit === leadSuit && !isTrump(c, trumpSuit));
+    if (hasLeadSuit) {
+      if (card.suit !== leadSuit || isTrump(card, trumpSuit)) {
+        const suitName = leadSuit === 'CLUBS' ? 'Трефы' : leadSuit === 'SPADES' ? 'Пики' : leadSuit === 'HEARTS' ? 'Червы' : 'Бубны';
+        return { valid: false, reason: `Нужно ходить в масть (${suitName})` };
+      }
+      return { valid: true };
+    }
   }
 
-  // 2. Must follow suit if it's a regular suit
-  const hasLeadSuit = hand.some(c => c.suit === leadSuit && !isTrump(c, trumpSuit));
-  if (hasLeadSuit && (card.suit !== leadSuit || isTrump(card, trumpSuit))) {
-    return { valid: false, reason: `Нужно ходить в масть (${leadSuit === 'CLUBS' ? 'Трефы' : leadSuit === 'SPADES' ? 'Пики' : leadSuit === 'HEARTS' ? 'Червы' : 'Бубны'})` };
-  }
-
-  // 3. Ace discard rule (если хода по масти не было класть туза нельзя)
-  // If discarding (not following suit and not trumping/following trump)
-  const followingSuit = card.suit === leadSuit && !isTrump(card, trumpSuit);
+  // 3. Ace discard rule (слив голого туза)
   const playingTrump = isTrump(card, trumpSuit);
+  const followingSuit = !isFirstCardTrump && card.suit === leadSuit && !playingTrump;
   
   if (!followingSuit && !playingTrump) {
-    // It's a discard (слив). Check if it's an Ace of an unplayed suit.
     if (card.rank === 'ACE' && !playedSuits.includes(card.suit)) {
-      return { valid: false, reason: 'Нельзя сливать туза в несыгранную масть' };
+      // Ищем, есть ли другие варианты слива (не козыри, не в масть, и не голые тузы)
+      const hasOtherOptions = hand.some(c => {
+        if (c.id === card.id) return false;
+        // Если это козырь, им можно ходить (если нет масти)
+        if (isTrump(c, trumpSuit)) return true;
+        // Если это другая масть, но не голый туз
+        if (!(c.rank === 'ACE' && !playedSuits.includes(c.suit))) return true;
+        return false;
+      });
+
+      if (hasOtherOptions) {
+        return { valid: false, reason: 'Нельзя сливать голого туза, пока есть другие карты' };
+      }
     }
   }
 

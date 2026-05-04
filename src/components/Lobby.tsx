@@ -8,11 +8,12 @@ interface LobbyProps {
   onStartSingle: () => void;
   onCreateRoom: () => void;
   onJoinRoom: (id: string) => void;
+  isConnecting?: boolean;
 }
 
 export const Lobby = ({
   playerName, setPlayerName, joinId, setJoinId,
-  onStartSingle, onCreateRoom, onJoinRoom
+  onStartSingle, onCreateRoom, onJoinRoom, isConnecting
 }: LobbyProps) => {
   return (
     <div className="h-screen bg-[#020617] flex items-center justify-center p-6 font-sans text-white overflow-hidden relative">
@@ -35,16 +36,22 @@ export const Lobby = ({
         <div className="space-y-4">
           <button 
             onClick={onStartSingle} 
-            className="w-full bg-white text-black font-black py-5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-2xl uppercase tracking-widest text-xs"
+            disabled={isConnecting}
+            className="w-full bg-white text-black font-black py-5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-2xl uppercase tracking-widest text-xs disabled:opacity-50 disabled:pointer-events-none"
           >
             ОДИНОЧНАЯ ИГРА
           </button>
           
           <button 
             onClick={onCreateRoom} 
-            className="w-full bg-emerald-500 text-emerald-950 font-black py-5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-2xl uppercase tracking-widest text-xs"
+            disabled={isConnecting}
+            className="w-full bg-emerald-500 text-emerald-950 font-black py-5 rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-2xl uppercase tracking-widest text-xs disabled:opacity-50 disabled:pointer-events-none h-14"
           >
-            СОЗДАТЬ КОМНАТУ
+            {isConnecting ? (
+              <div className="w-4 h-4 border-2 border-emerald-950 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            ) : (
+              "СОЗДАТЬ КОМНАТУ"
+            )}
           </button>
           
           <div className="pt-6 border-t border-white/10 mt-6">
@@ -58,9 +65,14 @@ export const Lobby = ({
               />
               <button 
                 onClick={() => onJoinRoom(joinId)} 
-                className="bg-white/20 px-6 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all"
+                disabled={isConnecting || !joinId.trim()}
+                className="bg-white/20 px-6 rounded-2xl font-black text-[10px] uppercase tracking-widest active:scale-95 transition-all disabled:opacity-50 min-w-[90px]"
               >
-                ВОЙТИ
+                {isConnecting ? (
+                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto"></div>
+                ) : (
+                  "ВОЙТИ"
+                )}
               </button>
             </div>
           </div>

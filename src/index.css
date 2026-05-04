@@ -84,3 +84,9 @@ body {
 .collecting-trick-1 { animation: collect-to-1 0.6s ease-in forwards; }
 .collecting-trick-2 { animation: collect-to-2 0.6s ease-in forwards; }
 .collecting-trick-3 { animation: collect-to-3 0.6s ease-in forwards; }
+
+/* Турбо-режим: отключаем все анимации и переходы */
+.turbo-active * {
+  animation: none !important;
+  transition: none !important;
+}
