@@ -344,11 +344,6 @@ function App() {
           eyes={eyes}
           myTeam={myTeam}
           otherTeam={otherTeam}
-      {phase === 'GAME_OVER' && (
-        <GameOverOverlay 
-          eyes={eyes}
-          myTeam={myTeam}
-          otherTeam={otherTeam}
           onLeave={() => setLobbyView(true)}
         />
       )}
