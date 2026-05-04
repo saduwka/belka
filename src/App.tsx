@@ -242,7 +242,6 @@ function App() {
         onTurboToggle={toggleTurboMode}
         onReset={() => isMultiplayer ? resetRound() : initGame()}
         onMenu={() => setLobbyView(true)}
-        onSync={forceSync}
       />
 
       <GameHeader 
@@ -367,12 +366,6 @@ function App() {
         />
       )}
 
-      {/* Лента событий (для дебага) */}
-      <div className="game-logs">
-        {logs.slice(0, 5).map((log, i) => (
-          <div key={i} className="log-item">{log}</div>
-        ))}
-      </div>
     </div>
   )
 }

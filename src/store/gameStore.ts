@@ -53,7 +53,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   isTurboMode: false,
   logs: [],
 
-  addLog: (msg: string) => set(state => ({ logs: [msg, ...state.logs].slice(0, 10) })),
+  addLog: (msg: string) => {
+    console.log(`[BELKA GAME]: ${msg}`);
+    set(state => ({ logs: [msg, ...state.logs].slice(0, 10) }));
+  },
 
   toggleTurboMode: () => set(state => ({ isTurboMode: !state.isTurboMode })),
 
