@@ -57,11 +57,11 @@ function App() {
     const interval = setInterval(() => {
       if (phase === 'LOBBY' || phase === 'GAME_OVER') return;
 
-      const myName = (localStorage.getItem('belka_player_name') || 'Игрок').trim();
+      const myName = (localStorage.getItem('belka_player_name') || 'Игрок').trim().toLowerCase();
       const firstHuman = players.find(p => !p.isBot);
       
       // Только "Судья" (первый живой игрок) принимает решения
-      if (firstHuman?.name.trim() !== myName) return;
+      if (firstHuman?.name.trim().toLowerCase() !== myName) return;
 
       // 1. Если на столе 4 карты, но ход всё еще -1 (зависло удаление)
       if (table.length === 4 && currentPlayerIndex === -1) {
@@ -71,8 +71,6 @@ function App() {
 
       // 2. Если ход бота, но он ничего не делает
       if (phase === 'PLAYING' && players[currentPlayerIndex]?.isBot && table.length < 4) {
-        // Мы не вызываем forceSync сразу, даем боту время. 
-        // Но если застряло - вызываем ход бота напрямую.
         const botHand = players[currentPlayerIndex].hand;
         const bestCard = getBestBotMove(botHand, table, trumpSuit, playedSuits);
         if (bestCard) {
@@ -86,9 +84,27 @@ function App() {
         addLog("🛡️ Watchdog: принудительное завершение раунда");
         resetRound();
       }
-    }, 4000); // Проверка каждые 4 секунды
+    }, 4000); 
 
-    return () => clearInterval(interval);
+    // Бэкап для всех игроков (на случай если Хост вылетел)
+    const backupInterval = setInterval(() => {
+      const state = useGameStore.getState();
+      // Если стол висит 10 секунд
+      if (state.table.length === 4 && state.currentPlayerIndex === -1) {
+        console.warn("🛡️ Backup Watchdog: принудительная очистка стола");
+        state.forceSync();
+      }
+      // Если у всех 0 карт уже долго
+      if (state.phase === 'PLAYING' && state.players.length === 4 && state.players.every(p => p.hand.length === 0)) {
+        console.warn("🛡️ Backup Watchdog: принудительное завершение раунда");
+        state.resetRound();
+      }
+    }, 12000);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(backupInterval);
+    };
   }, [phase, currentPlayerIndex, table.length, players, trumpSuit, playedSuits, forceSync, playCard, resetRound, addLog]);
 
   // Скрипт авто-игры для игрока
