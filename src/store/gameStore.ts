@@ -284,7 +284,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (cardIndex === -1) return;
     const card = player.hand[cardIndex];
 
-    get().addLog(`${player.name} походил ${card.rank} ${card.suit}`);
+    get().addLog(`[${playerIndex}] ${player.name} походил ${card.rank} ${card.suit}`);
 
     const validation = validateMove(card, player.hand, state.table, state.trumpSuit, state.playedSuits);
     if (!validation.valid) {
@@ -323,7 +323,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
         const winnerName = currentState.players[winnerIndex].name;
         const trickPoints = currentState.table.reduce((sum, c) => sum + CARD_POINTS[c.rank], 0);
-        get().addLog(`Взятку забрал ${winnerName} (+${trickPoints} очков)`);
+        get().addLog(`[${winnerIndex}] ${winnerName} забрал взятку (+${trickPoints} очков)`);
 
         const winnerTeam = currentState.players[winnerIndex].team;
         const newScores: [number, number] = [...currentState.scores];
@@ -387,7 +387,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     } else { 
       nextState.currentPlayerIndex = (state.currentPlayerIndex + 1) % 4; 
       const nextName = state.players[nextState.currentPlayerIndex].name;
-      get().addLog(`Очередь игрока: ${nextName}`);
+      get().addLog(`Очередь игрока [${nextState.currentPlayerIndex}]: ${nextName}`);
     }
     
     const { isMultiplayer, roomId, isTurboMode } = get();

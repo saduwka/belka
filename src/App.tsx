@@ -344,6 +344,11 @@ function App() {
           eyes={eyes}
           myTeam={myTeam}
           otherTeam={otherTeam}
+      {phase === 'GAME_OVER' && (
+        <GameOverOverlay 
+          eyes={eyes}
+          myTeam={myTeam}
+          otherTeam={otherTeam}
           onLeave={() => setLobbyView(true)}
         />
       )}
@@ -354,8 +359,6 @@ function App() {
           <div key={i} className="log-item">{log}</div>
         ))}
       </div>
-
-      {isCollecting && <div className="collecting-overlay">Собираем карты...</div>}
     </div>
   )
 }
