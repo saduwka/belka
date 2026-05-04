@@ -71,7 +71,15 @@ function App() {
       }, delay);
       return () => clearTimeout(timer);
     }
-  }, [phase, currentPlayerIndex, table.length, players, isMultiplayer, isTurboMode, playCard, trumpSuit, playedSuits]);
+
+    // АВТО-СПАСАТЕЛЬ: Если у всех 0 карт, но раунд не кончился
+    if (players.length === 4 && players.every(p => p.hand.length === 0) && phase === 'PLAYING') {
+      if (firstHuman?.name.trim() === myName) {
+        getBestBotMove([], [], null, []); // Просто для импорта
+        resetRound();
+      }
+    }
+  }, [phase, currentPlayerIndex, table.length, players, isMultiplayer, isTurboMode, playCard, trumpSuit, playedSuits, resetRound]);
 
   // Скрипт авто-игры для игрока
   useEffect(() => {
