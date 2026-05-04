@@ -124,7 +124,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
           set(normalizedState);
 
           // Хост запускает новый раунд, если все готовы
-          if (normalizedState.phase === 'ROUND_OVER' && normalizedState.creatorName?.trim() === cleanName) {
+          const firstHuman = normalizedState.players.find((p: any) => !p.isBot);
+          if (normalizedState.phase === 'ROUND_OVER' && firstHuman?.name?.trim() === cleanName) {
             const readyCount = Object.keys(normalizedState.readyPlayers || {}).filter(k => k !== '_init').length;
             if (readyCount === 4 && !isResetting && (!normalizedState.votingState || normalizedState.votingState.result)) {
                isResetting = true;
@@ -304,10 +305,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
       (window as any).belkaRoundTimer = setTimeout(() => {
         (window as any).belkaRoundTimer = null;
         
-        // В мультиплеере только хост обрабатывает завершение взятки и начисление очков
+        // В мультиплеере первый живой игрок в списке берет на себя роль "судьи" (обработка взятки)
         const currentState = get();
-        const cleanName = (localStorage.getItem('belka_player_name') || 'Игрок').trim();
-        if (currentState.isMultiplayer && currentState.creatorName?.trim() !== cleanName) return;
+        const myName = (localStorage.getItem('belka_player_name') || 'Игрок').trim();
+        const firstHuman = currentState.players.find(p => !p.isBot);
+        
+        if (currentState.isMultiplayer && firstHuman?.name.trim() !== myName) return;
 
         const winnerTeam = currentState.players[winnerIndex].team;
         const newScores: [number, number] = [...currentState.scores];
