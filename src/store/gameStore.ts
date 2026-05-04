@@ -506,4 +506,41 @@ export const useGameStore = create<GameStore>((set, get) => ({
   updateFromRemote: (newState) => set(newState),
 
   toggleAutoPlay: () => set(state => ({ isAutoPlay: !state.isAutoPlay })),
+
+  forceSync: () => {
+    const state = get();
+    const firstHuman = state.players.find(p => !p.isBot);
+    const myName = (localStorage.getItem('belka_player_name') || 'Игрок').trim();
+    if (firstHuman?.name.trim() !== myName) {
+      set({ lastError: { message: "Только Хост может делать синхронизацию", id: Date.now() } });
+      return;
+    }
+    
+    get().addLog("🔄 Принудительная синхронизация...");
+    
+    if (state.table.length === 4) {
+      const winnerIndex = determineTrickWinner(state.table, state.trumpSuit || 'CLUBS', state.firstPlayerInTrick);
+      const trickPoints = state.table.reduce((sum, c) => sum + CARD_POINTS[c.rank], 0);
+      const newScores: [number, number] = [...state.scores];
+      newScores[state.players[winnerIndex].team] += trickPoints;
+      
+      const finalUpdate: Partial<GameState> = {
+        table: [],
+        scores: newScores,
+        currentPlayerIndex: winnerIndex,
+        firstPlayerInTrick: winnerIndex,
+        lastTrickWinnerIndex: null,
+        readyPlayers: { _init: true } as any
+      };
+      
+      if (state.isMultiplayer) firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), finalUpdate);
+      else set(finalUpdate);
+    } else if (state.currentPlayerIndex === -1) {
+       const winnerIndex = state.lastTrickWinnerIndex !== null ? state.lastTrickWinnerIndex : 0;
+       if (state.isMultiplayer) firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), { currentPlayerIndex: winnerIndex });
+       else set({ currentPlayerIndex: winnerIndex });
+    } else {
+       if (state.isMultiplayer) firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), { _sync: Date.now() });
+    }
+  }
 }));
