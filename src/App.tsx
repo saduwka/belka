@@ -52,6 +52,27 @@ function App() {
     }
   }, [table.length, isTurboMode]);
 
+  // Глобальный контроллер ботов (Fail-safe)
+  // Если сейчас ход бота, и мы — первый живой игрок (Хост/Судья), мы заставляем бота ходить.
+  useEffect(() => {
+    if (phase !== 'PLAYING' || table.length >= 4) return;
+    
+    // Находим первого живого игрока
+    const firstHuman = players.find(p => !p.isBot);
+    const myName = (localStorage.getItem('belka_player_name') || 'Игрок').trim();
+    
+    // Если я — "Судья" и сейчас ход бота
+    if (firstHuman?.name.trim() === myName && players[currentPlayerIndex]?.isBot) {
+      const delay = isTurboMode ? 50 : 1000;
+      const timer = setTimeout(() => {
+        const botHand = players[currentPlayerIndex].hand;
+        const bestCard = getBestBotMove(botHand, table, trumpSuit, playedSuits);
+        if (bestCard) playCard(currentPlayerIndex, bestCard.id);
+      }, delay);
+      return () => clearTimeout(timer);
+    }
+  }, [phase, currentPlayerIndex, table.length, players, isMultiplayer, isTurboMode, playCard, trumpSuit, playedSuits]);
+
   // Скрипт авто-игры для игрока
   useEffect(() => {
     if (!isAutoPlay) return;
