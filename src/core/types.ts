@@ -60,7 +60,7 @@ export interface GameState {
     votes: Record<number, 'TAKE' | 'HANG'>;
     result?: 'TAKE' | 'HANG';
   };
-  readyPlayers: Record<number, boolean>;
+  readyPlayers: Record<string | number, boolean>;
   roundEndTime?: number;
   spectators: { id: string, name: string }[];
   creatorName?: string;

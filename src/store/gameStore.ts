@@ -8,8 +8,8 @@ interface GameStore extends GameState {
   isMultiplayer: boolean;
   roomId: string | null;
   myPlayerIndex: number;
-  lastError: { message: string, id: number } | null;
   isAutoPlay: boolean;
+  isTurboMode: boolean;
   
   initGame: (roomId?: string, myIndex?: number, name?: string) => void;
   playCard: (playerIndex: number, cardId: string) => void;
@@ -21,6 +21,7 @@ interface GameStore extends GameState {
   resetRound: () => void;
   updateFromRemote: (newState: Partial<GameState>) => void;
   toggleAutoPlay: () => void;
+  toggleTurboMode: () => void;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({

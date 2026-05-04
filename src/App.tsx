@@ -135,7 +135,7 @@ function App() {
       initGame(id, -1, finalName);
       setLobbyView(false);
     } else {
-      setToasts(prev => [...prev, { id: Date.now(), message: r.error || 'Ошибка входа' }]);
+      setToasts(prev => [...prev, { id: Date.now(), message: (r as any).error || 'Ошибка входа' }]);
     }
     setIsConnecting(false);
   };
