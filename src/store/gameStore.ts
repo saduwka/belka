@@ -75,7 +75,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       // Если индекс не менялся > 8 сек во время PLAYING — хост делает forceSync.
       let _wdLastIdx: number | null = null;
       let _wdLastChange = Date.now();
-      const WATCHDOG_HANG_MS = 8000;
+      const WATCHDOG_HANG_MS = 32000;
 
       const watchdogInterval = setInterval(() => {
         const st = get();

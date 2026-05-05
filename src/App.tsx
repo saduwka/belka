@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useGameStore } from './store/gameStore'
 import { useMultiplayerStore } from './store/multiplayerStore'
 import { getBestBotMove } from './core/engine'
@@ -41,6 +41,7 @@ function App() {
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [afkTimer, setAfkTimer] = useState<number | null>(null);
 
   useEffect(() => {
     if (table.length === 4) {
@@ -134,6 +135,77 @@ function App() {
       }
     }
   }, [isAutoPlay, phase, currentPlayerIndex, myPlayerIndex, table.length, players, trumpSuit, votingState, readyPlayers, isTurboMode, playCard, lobbyView]);
+
+  // AFK таймер: 30 секунд на ход для человека
+  const afkDeadlineRef = useRef<number | null>(null);
+  const afkIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const afkFiredRef = useRef(false);
+
+  useEffect(() => {
+    // Очистка
+    const clearAfk = () => {
+      if (afkIntervalRef.current) {
+        clearInterval(afkIntervalRef.current);
+        afkIntervalRef.current = null;
+      }
+      afkDeadlineRef.current = null;
+      afkFiredRef.current = false;
+      setAfkTimer(null);
+    };
+
+    if (lobbyView || phase !== 'PLAYING' || currentPlayerIndex === -1) {
+      clearAfk();
+      return;
+    }
+
+    if (currentPlayerIndex !== myPlayerIndex || myPlayerIndex === -1) {
+      clearAfk();
+      return;
+    }
+
+    const currentPlayer = players[currentPlayerIndex];
+    if (!currentPlayer || currentPlayer.isBot) {
+      clearAfk();
+      return;
+    }
+
+    // Всегда ставим новый дедлайн при запуске эффекта
+    afkDeadlineRef.current = Date.now() + 30_000;
+    afkFiredRef.current = false;
+
+    // Убираем старый интервал если есть
+    if (afkIntervalRef.current) {
+      clearInterval(afkIntervalRef.current);
+    }
+
+    const tick = () => {
+      if (!afkDeadlineRef.current) return;
+      const remaining = Math.max(0, Math.ceil((afkDeadlineRef.current - Date.now()) / 1000));
+      setAfkTimer(remaining);
+
+      if (remaining <= 0 && !afkFiredRef.current) {
+        afkFiredRef.current = true;
+        const state = useGameStore.getState();
+        const hand = state.players[state.currentPlayerIndex]?.hand;
+        if (hand && hand.length > 0 && state.table.length < 4) {
+          const bestCard = getBestBotMove(hand, state.table, state.trumpSuit, state.playedSuits);
+          if (bestCard) {
+            playCard(state.currentPlayerIndex, bestCard.id);
+          }
+        }
+      }
+    };
+
+    tick(); // сразу показать текущее значение
+    afkIntervalRef.current = setInterval(tick, 1000);
+
+    return () => {
+      if (afkIntervalRef.current) {
+        clearInterval(afkIntervalRef.current);
+        afkIntervalRef.current = null;
+      }
+    };
+  }, [currentPlayerIndex, phase, lobbyView, myPlayerIndex]);
 
   useEffect(() => {
     if (roundEndTime) {
@@ -315,14 +387,15 @@ function App() {
 
         return (
           <div key={idx} className={`absolute ${posClass} z-50 flex flex-col items-center gap-2`}>
-             <PlayerInfo 
-                name={players[idx]?.name || '...'} 
+             <PlayerInfo
+                name={players[idx]?.name || '...'}
                 relation={relation}
-                active={currentPlayerIndex === idx} 
-                cardsCount={players[idx]?.hand.length || 0} 
-                assignedSuit={showMapping ? trumpMapping?.[idx] : undefined} 
-                position={positions[offset]} 
+                active={currentPlayerIndex === idx}
+                cardsCount={players[idx]?.hand.length || 0}
+                assignedSuit={showMapping ? trumpMapping?.[idx] : undefined}
+                position={positions[offset]}
                 isAdmin={players[idx]?.name.toLowerCase() === 'sadu'}
+                afkTimer={currentPlayerIndex === idx ? afkTimer : null}
               />
               {myPlayerIndex === -1 && players[idx]?.isBot && (
                 <button 
@@ -353,8 +426,17 @@ function App() {
 
       <div className="relative pb-16 flex flex-col items-center">
         {isMyTurn && (
-          <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-yellow-400 text-yellow-950 px-4 py-1 rounded-full font-black text-[10px] uppercase tracking-widest animate-bounce z-50 shadow-xl">
-            ВАШ ХОД
+          <div className="absolute -top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 z-50">
+            <div className="bg-yellow-400 text-yellow-950 px-4 py-1 rounded-full font-black text-[10px] uppercase tracking-widest animate-bounce shadow-xl">
+              ВАШ ХОД
+            </div>
+            {afkTimer != null && (
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-black text-white shadow-xl border-2 border-white ${
+                afkTimer > 20 ? 'bg-emerald-500' : afkTimer > 10 ? 'bg-yellow-500' : 'bg-red-500'
+              } ${afkTimer <= 5 ? 'animate-pulse' : ''}`}>
+                {afkTimer}
+              </div>
+            )}
           </div>
         )}
         {myPlayerIndex === -1 && (
