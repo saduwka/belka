@@ -69,6 +69,44 @@ export const useGameStore = create<GameStore>((set, get) => ({
       let botTimeout: ReturnType<typeof setTimeout> | null = null;
       let roundEndTimeout: ReturnType<typeof setTimeout> | null = null;
 
+      // ── Watchdog ──────────────────────────────────────────────────────────
+      // Следит за currentPlayerIndex каждые 3 сек.
+      // Если индекс не менялся > 8 сек во время PLAYING — хост делает forceSync.
+      let _wdLastIdx: number | null = null;
+      let _wdLastChange = Date.now();
+      const WATCHDOG_HANG_MS = 8000;
+
+      const watchdogInterval = setInterval(() => {
+        const st = get();
+        if (st.phase !== 'PLAYING' || !st.isMultiplayer) return;
+
+        const now = Date.now();
+        if (st.currentPlayerIndex !== _wdLastIdx) {
+          // Индекс изменился — всё нормально, сбрасываем таймер
+          _wdLastIdx = st.currentPlayerIndex;
+          _wdLastChange = now;
+          return;
+        }
+
+        if (now - _wdLastChange > WATCHDOG_HANG_MS) {
+          // Зависание! Только хост реагирует
+          const myName = (localStorage.getItem('belka_player_name') || 'Игрок').trim();
+          const firstHuman = st.players.find((p: Player) => !p.isBot);
+          if (firstHuman?.name.trim() !== myName) return;
+
+          get().addLog(
+            `⚠️ Watchdog: зависание (player=${st.currentPlayerIndex}, table=${st.table.length}) → forceSync`
+          );
+          set({ lastError: { message: '⚠️ Зависание — автовосстановление...', id: Date.now() } });
+
+          _wdLastChange = now; // Сбрасываем, чтобы не спамить forceSync
+          get().forceSync();
+        }
+      }, 3000);
+      // Сохраняем интервал глобально чтобы при необходимости можно было очистить
+      (window as any)._belkaWatchdog = watchdogInterval;
+      // ─────────────────────────────────────────────────────────────────────
+
       onValue(stateRef, (snapshot) => {
         const remoteState = snapshot.val();
         if (remoteState) {
@@ -151,12 +189,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
             const cpIdx = normalizedState.currentPlayerIndex;
             if (cpIdx !== undefined && cpIdx !== -1) {
               const currentPlayer = normalizedState.players[cpIdx];
-              if (currentPlayer?.isBot && normalizedState.table.length < 4) {
+              if (currentPlayer?.isBot) {
                 if (botTimeout) clearTimeout(botTimeout);
                 botTimeout = setTimeout(() => {
                   const st = get();
                   const currentTable = st.table || [];
-                  if (st.phase === 'PLAYING' && st.currentPlayerIndex === cpIdx && st.players[cpIdx].isBot && currentTable.length < 4) {
+                  // Фикс #3: убрали currentTable.length < 4 — бот должен ходить даже если стол только что очистился после взятки
+                  if (st.phase === 'PLAYING' && st.currentPlayerIndex === cpIdx && st.players[cpIdx].isBot) {
                     const best = getBestBotMove(st.players[cpIdx].hand, currentTable, st.trumpSuit, st.playedSuits || []);
                     if (best) get().playCard(cpIdx, best.id);
                   }
@@ -307,7 +346,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const firstCard = newTable[0];
       const winnerIndex = determineTrickWinner(newTable, state.firstPlayerInTrick, firstCard.suit, state.trumpSuit);
       const trickPoints = newTable.reduce((sum, c) => sum + CARD_POINTS[c.rank], 0);
-      const isRoundOver = newPlayers.every(p => p.hand.length === 0);
+      // Фикс #4: используем (p.hand || []) на случай если Firebase вернул undefined вместо []
+      const isRoundOver = newPlayers.every(p => (p.hand || []).length === 0);
       nextState = { ...nextState, lastTrickWinnerIndex: winnerIndex, currentPlayerIndex: -1 };
       
       const delay = state.isTurboMode ? 100 : 3000;
@@ -332,7 +372,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const winnerTeam = currentState.players[winnerIndex].team;
         const newScores: [number, number] = [...currentState.scores];
         newScores[winnerTeam] += trickPoints;
-        let finalUpdate: Partial<GameState> = { table: [], scores: newScores, currentPlayerIndex: winnerIndex, firstPlayerInTrick: winnerIndex, lastTrickWinnerIndex: null, readyPlayers: { _init: true } as any };
+        // Фикс #2: сохраняем winnerIndex вместо null, чтобы forceSync мог восстановить состояние
+        let finalUpdate: Partial<GameState> = { table: [], scores: newScores, currentPlayerIndex: winnerIndex, firstPlayerInTrick: winnerIndex, lastTrickWinnerIndex: winnerIndex, readyPlayers: { _init: true } as any };
         if (isRoundOver) {
           const currentEyes = [...currentState.eyes];
           const team0Points = newScores[0];
@@ -402,7 +443,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set(nextState);
       // В одиночной игре проверяем, не ход ли сейчас бота
       const st = get();
-      if (st.phase === 'PLAYING' && st.currentPlayerIndex !== 0 && st.currentPlayerIndex !== -1 && st.table.length < 4) {
+      // Фикс #1: убрали st.table.length < 4 — бот должен ходить даже после очистки стола
+      if (st.phase === 'PLAYING' && st.currentPlayerIndex !== 0 && st.currentPlayerIndex !== -1) {
         const delay = st.isTurboMode ? 0 : 1000;
         setTimeout(() => {
           const currentSt = get();
@@ -485,7 +527,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const nextState: Partial<GameState> = {
       players: newPlayers, table: [], scores: [0, 0], phase: 'PLAYING',
       currentPlayerIndex: starterIndex, firstPlayerInTrick: starterIndex,
-      lastTrickWinnerIndex: null, playedSuits: [], lastError: null,
+      lastTrickWinnerIndex: null, // Фикс #2: обнуляем только здесь — при старте нового раунда
+      playedSuits: [], lastError: null,
       trumpSuit: nextTrumpSuit, trumpSetterTeam: starterIndex % 2 === 0 ? 0 : 1,
       votingState: null as any,
       readyPlayers: { _init: true }, // Используем заглушку, чтобы Firebase не удалял пустой объект
@@ -533,7 +576,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         scores: newScores,
         currentPlayerIndex: winnerIndex,
         firstPlayerInTrick: winnerIndex,
-        lastTrickWinnerIndex: null,
+        lastTrickWinnerIndex: winnerIndex, // Сохраняем — нужен для следующего forceSync если снова зависнем
         readyPlayers: { _init: true } as any
       };
       

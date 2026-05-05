@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { StressTestModal } from './StressTestModal';
 
 interface LobbyProps {
   playerName: string;
@@ -15,6 +16,7 @@ export const Lobby = ({
   playerName, setPlayerName, joinId, setJoinId,
   onStartSingle, onCreateRoom, onJoinRoom, isConnecting
 }: LobbyProps) => {
+  const [showStressTest, setShowStressTest] = useState(false);
   return (
     <div className="h-screen bg-[#020617] flex items-center justify-center p-6 font-sans text-white overflow-hidden relative">
       <div className="absolute inset-0 bg-gradient-to-tr from-emerald-900/20 to-blue-900/20"></div>
@@ -78,6 +80,41 @@ export const Lobby = ({
           </div>
         </div>
       </div>
+
+      {/* Stress test button — subtle, for devs */}
+      <button
+        onClick={() => setShowStressTest(true)}
+        style={{
+          position: 'absolute',
+          bottom: '20px',
+          right: '20px',
+          background: 'rgba(255,255,255,0.05)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          color: 'rgba(255,255,255,0.25)',
+          padding: '6px 14px',
+          borderRadius: '999px',
+          fontSize: '10px',
+          fontWeight: 900,
+          letterSpacing: '1.5px',
+          textTransform: 'uppercase',
+          cursor: 'pointer',
+          transition: 'all 0.2s',
+        }}
+        onMouseEnter={e => {
+          e.currentTarget.style.color = 'rgba(255,255,255,0.7)';
+          e.currentTarget.style.borderColor = 'rgba(124,58,237,0.5)';
+          e.currentTarget.style.background = 'rgba(124,58,237,0.1)';
+        }}
+        onMouseLeave={e => {
+          e.currentTarget.style.color = 'rgba(255,255,255,0.25)';
+          e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
+          e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+        }}
+      >
+        🧪 stress test
+      </button>
+
+      <StressTestModal isOpen={showStressTest} onClose={() => setShowStressTest(false)} />
     </div>
   );
 };
