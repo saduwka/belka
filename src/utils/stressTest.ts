@@ -1,4 +1,4 @@
-import { GameState, Card, Player, CARD_POINTS } from '../core/types';
+import { GameState, Card, Player, CARD_POINTS, Suit } from '../core/types';
 import {
   createDeck,
   shuffleDeck,
@@ -157,7 +157,7 @@ export class BelkaStressTester {
     let table: Card[] = [];
     let scores: [number, number] = [0, 0];
     let firstPlayerInTrick = starterIndex;
-    let playedSuits: string[] = [];
+    let playedSuits: Suit[] = [];
     let trickCount = 0;
 
     const maxMoves = 8 * 4; // 8 взяток × 4 игрока = 32 хода
@@ -173,7 +173,7 @@ export class BelkaStressTester {
             currentPlayerIndex,
             tableLength: table.length,
             phase: 'PLAYING',
-            players: players.map(p => ({ id: p.id, handSize: p.hand.length, isBot: p.isBot })),
+            players: players.map(p => ({ id: p.id, handSize: p.hand.length, isBot: !!p.isBot })),
           },
         });
         throw new Error(`currentPlayerIndex = -1 в раунде ${roundNumber}, ход ${moveCount}`);
