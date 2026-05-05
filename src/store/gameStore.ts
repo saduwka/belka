@@ -561,33 +561,96 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ lastError: { message: "Только Хост может делать синхронизацию", id: Date.now() } });
       return;
     }
-    
+
     get().addLog("🔄 Принудительная синхронизация...");
-    
+
+    // ── Хелпер: подсчёт очков и переход в ROUND_OVER / GAME_OVER ──────────
+    const resolveRoundOver = (scores: [number, number]): Partial<GameState> => {
+      const currentEyes = [...state.eyes] as [number, number];
+      const [team0Points, team1Points] = scores;
+      let currentEggs = state.eggsCount || 0;
+
+      if (team0Points === 60 && team1Points === 60) {
+        currentEggs += 1;
+        return { scores, eggsCount: currentEggs, phase: 'ROUND_OVER', isFirstRound: false, readyPlayers: { _init: true } as any };
+      }
+
+      const wTeam = team0Points > team1Points ? 0 : 1;
+      const loserPoints  = wTeam === 0 ? team1Points : team0Points;
+      const winnerPoints = wTeam === 0 ? team0Points : team1Points;
+      let eyesToAward = 1;
+      if (state.isFirstRound) {
+        eyesToAward = winnerPoints === 120 ? 4 : 2;
+      } else {
+        if (winnerPoints === 120)  eyesToAward = 4;
+        else if (loserPoints < 31) eyesToAward = 2;
+        else                       eyesToAward = 1;
+      }
+      currentEyes[wTeam] = Math.min(12, currentEyes[wTeam] + eyesToAward + currentEggs);
+      return {
+        scores,
+        eyes: currentEyes,
+        eggsCount: 0,
+        phase: currentEyes[wTeam] >= 12 ? 'GAME_OVER' : 'ROUND_OVER',
+        isFirstRound: false,
+        readyPlayers: { _init: true } as any,
+        roundEndTime: null as any,
+      };
+    };
+    // ──────────────────────────────────────────────────────────────────────
+
+    // Случай 1: стол полный (4 карты), взятка не была разыграна
     if (state.table.length === 4) {
       const leadSuit = state.table[0].suit;
       const winnerIndex = determineTrickWinner(state.table, state.firstPlayerInTrick, leadSuit, state.trumpSuit || 'CLUBS');
       const trickPoints = state.table.reduce((sum, c) => sum + CARD_POINTS[c.rank], 0);
       const newScores: [number, number] = [...state.scores];
       newScores[state.players[winnerIndex].team] += trickPoints;
-      
-      const finalUpdate: Partial<GameState> = {
-        table: [],
-        scores: newScores,
-        currentPlayerIndex: winnerIndex,
-        firstPlayerInTrick: winnerIndex,
-        lastTrickWinnerIndex: winnerIndex, // Сохраняем — нужен для следующего forceSync если снова зависнем
-        readyPlayers: { _init: true } as any
-      };
-      
+
+      // Были ли это последние карты?
+      const isRoundOver = state.players.every(p => (p.hand || []).length === 0);
+      let finalUpdate: Partial<GameState>;
+      if (isRoundOver) {
+        get().addLog(`🔄 forceSync: последняя взятка → ROUND_OVER`);
+        finalUpdate = {
+          table: [], currentPlayerIndex: winnerIndex, firstPlayerInTrick: winnerIndex,
+          lastTrickWinnerIndex: winnerIndex, ...resolveRoundOver(newScores),
+        };
+      } else {
+        finalUpdate = {
+          table: [], scores: newScores,
+          currentPlayerIndex: winnerIndex, firstPlayerInTrick: winnerIndex,
+          lastTrickWinnerIndex: winnerIndex, readyPlayers: { _init: true } as any,
+        };
+      }
+
       if (state.isMultiplayer) firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), finalUpdate);
       else set(finalUpdate);
-    } else if (state.currentPlayerIndex === -1) {
-       const winnerIndex = state.lastTrickWinnerIndex !== null ? state.lastTrickWinnerIndex : 0;
-       if (state.isMultiplayer) firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), { currentPlayerIndex: winnerIndex });
-       else set({ currentPlayerIndex: winnerIndex });
-    } else {
-       if (state.isMultiplayer) firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), { _sync: Date.now() });
+      return;
     }
+
+    // Случай 2: currentPlayerIndex застрял на -1
+    if (state.currentPlayerIndex === -1) {
+      const winnerIndex = state.lastTrickWinnerIndex !== null ? state.lastTrickWinnerIndex : 0;
+      if (state.isMultiplayer) firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), { currentPlayerIndex: winnerIndex });
+      else set({ currentPlayerIndex: winnerIndex });
+      return;
+    }
+
+    // Случай 3 (аварийный): фаза PLAYING, но все руки пусты — пропущен переход в ROUND_OVER
+    if (state.phase === 'PLAYING' && state.players.length === 4 && state.players.every(p => (p.hand || []).length === 0)) {
+      get().addLog(`🔄 forceSync: пустые руки в PLAYING → принудительный ROUND_OVER`);
+      const finalUpdate: Partial<GameState> = {
+        currentPlayerIndex: state.lastTrickWinnerIndex ?? 0,
+        firstPlayerInTrick: state.lastTrickWinnerIndex ?? 0,
+        ...resolveRoundOver(state.scores),
+      };
+      if (state.isMultiplayer) firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), finalUpdate);
+      else set(finalUpdate);
+      return;
+    }
+
+    // Случай 4: обычный пинг Firebase, чтобы разбудить onValue (запустит бота)
+    if (state.isMultiplayer) firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), { _sync: Date.now() });
   }
 }));
