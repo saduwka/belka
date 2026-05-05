@@ -1,18 +1,23 @@
 import { GameState } from '../core/types';
+import { BelkaScore } from './BelkaScore';
 
 interface GameOverOverlayProps {
   eyes: [number, number];
   myTeam: number;
   otherTeam: number;
   onLeave: () => void;
+  trumpSuit: string | null;
+  trumpMapping?: Record<number, any>;
 }
 
 export const GameOverOverlay = ({
-  eyes, myTeam, otherTeam, onLeave
+  eyes, myTeam, otherTeam, onLeave, trumpSuit, trumpMapping
 }: GameOverOverlayProps) => {
   const isVictory = eyes[myTeam] >= 12 && eyes[otherTeam] < 12;
   const isDefeat = eyes[otherTeam] >= 12 && eyes[myTeam] < 12;
-  const isDraw = eyes[myTeam] >= 12 && eyes[otherTeam] >= 12; // Rare but possible
+  
+  const myTeamSuit = trumpMapping ? (myTeam === 0 ? trumpMapping[0] : trumpMapping[1]) : null;
+  const otherTeamSuit = trumpMapping ? (otherTeam === 0 ? trumpMapping[0] : trumpMapping[1]) : null;
 
   let title = 'ИГРА ОКОНЧЕНА';
   let color = 'text-white';
@@ -32,17 +37,15 @@ export const GameOverOverlay = ({
           {title}
         </h2>
         
-        <div className="flex justify-center items-center gap-10 mb-16">
-          <div className="flex flex-col items-center">
-            <span className="text-xs font-black opacity-40 uppercase tracking-[0.2em] mb-4">МЫ</span>
-            <span className="text-7xl font-black text-emerald-400 drop-shadow-[0_0_15px_rgba(16,185,129,0.3)]">{eyes[myTeam]}</span>
-            <span className="text-[10px] font-black opacity-40 uppercase tracking-widest mt-2">ГЛАЗ</span>
+        <div className="flex justify-center items-center gap-12 mb-16 items-end">
+          <div className="flex flex-col items-center gap-4">
+            <span className="text-xs font-black opacity-40 uppercase tracking-[0.2em]">МЫ</span>
+            <BelkaScore score={eyes[myTeam]} trumpSuit={myTeamSuit} />
           </div>
-          <div className="text-4xl font-black opacity-10 pt-4 pb-8">:</div>
-          <div className="flex flex-col items-center">
-            <span className="text-xs font-black opacity-40 uppercase tracking-[0.2em] mb-4">ОНИ</span>
-            <span className="text-7xl font-black text-blue-400 drop-shadow-[0_0_15px_rgba(59,130,246,0.3)]">{eyes[otherTeam]}</span>
-            <span className="text-[10px] font-black opacity-40 uppercase tracking-widest mt-2">ГЛАЗ</span>
+          <div className="text-4xl font-black opacity-10 pb-12">:</div>
+          <div className="flex flex-col items-center gap-4">
+            <span className="text-xs font-black opacity-40 uppercase tracking-[0.2em]">ОНИ</span>
+            <BelkaScore score={eyes[otherTeam]} trumpSuit={otherTeamSuit} />
           </div>
         </div>
 

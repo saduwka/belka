@@ -54,6 +54,8 @@ function App() {
 
   // СТОРОЖЕВОЙ ТАЙМЕР (Watchdog) - делает игру "самовосстанавливающейся"
   useEffect(() => {
+    if (lobbyView) return;
+
     const interval = setInterval(() => {
       if (phase === 'LOBBY' || phase === 'GAME_OVER') return;
 
@@ -91,6 +93,7 @@ function App() {
 
     // Бэкап для всех игроков (на случай если Хост вылетел)
     const backupInterval = setInterval(() => {
+      if (lobbyView) return;
       const state = useGameStore.getState();
       // Если стол висит 10 секунд
       if (state.table.length === 4 && state.currentPlayerIndex === -1) {
@@ -108,11 +111,11 @@ function App() {
       clearInterval(interval);
       clearInterval(backupInterval);
     };
-  }, [phase, currentPlayerIndex, table.length, players, trumpSuit, playedSuits, forceSync, playCard, resetRound, addLog]);
+  }, [phase, currentPlayerIndex, table.length, players, trumpSuit, playedSuits, forceSync, playCard, resetRound, addLog, lobbyView]);
 
   // Скрипт авто-игры для игрока
   useEffect(() => {
-    if (!isAutoPlay) return;
+    if (!isAutoPlay || lobbyView) return;
 
     if (phase === 'PLAYING' && currentPlayerIndex === myPlayerIndex && myPlayerIndex !== -1 && table.length < 4) {
       const delay = isTurboMode ? 0 : 1000;
@@ -130,7 +133,7 @@ function App() {
         setReady(myPlayerIndex);
       }
     }
-  }, [isAutoPlay, phase, currentPlayerIndex, myPlayerIndex, table.length, players, trumpSuit, votingState, readyPlayers, isTurboMode, playCard]);
+  }, [isAutoPlay, phase, currentPlayerIndex, myPlayerIndex, table.length, players, trumpSuit, votingState, readyPlayers, isTurboMode, playCard, lobbyView]);
 
   useEffect(() => {
     if (roundEndTime) {
@@ -222,7 +225,10 @@ function App() {
         onTakeSlot={takeSlot}
         onToggleReady={toggleLobbyReady}
         onStartGame={startGame}
-        onLeave={() => setLobbyView(true)}
+        onLeave={() => {
+          useGameStore.getState().leaveGame();
+          setLobbyView(true);
+        }}
       />
     );
   }
@@ -262,7 +268,10 @@ function App() {
         isTurboMode={isTurboMode}
         onTurboToggle={toggleTurboMode}
         onReset={() => isMultiplayer ? resetRound() : initGame()}
-        onMenu={() => setLobbyView(true)}
+        onMenu={() => {
+          useGameStore.getState().leaveGame();
+          setLobbyView(true);
+        }}
         isAdmin={isAdmin}
       />
 
@@ -377,6 +386,8 @@ function App() {
           submitVote={submitVote}
           setReady={setReady}
           resetRound={resetRound}
+          trumpSuit={trumpSuit}
+          trumpMapping={trumpMapping}
         />
       )}
 
@@ -385,7 +396,11 @@ function App() {
           eyes={eyes}
           myTeam={myTeam}
           otherTeam={otherTeam}
-          onLeave={() => setLobbyView(true)}
+          onLeave={() => {
+            useGameStore.getState().leaveGame();
+            setLobbyView(true);
+          }}
+          trumpSuit={trumpSuit}
         />
       )}
 

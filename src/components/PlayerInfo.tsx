@@ -10,23 +10,41 @@ const getSuitSymbol = (suit: string) => {
   }
 };
 
+import { CardBack } from './CardBack';
+
 export const MiniFan = ({ count, position }: { count: number, position: 'top' | 'left' | 'right' }) => {
-  const displayCount = Math.min(count, 5);
+  const displayCount = Math.min(count, 8);
   const cards = Array.from({ length: displayCount });
+  const mid = (displayCount - 1) / 2;
   
   return (
-    <div className={`flex relative ${position === 'top' ? 'h-6' : 'w-6 h-12'} items-center justify-center z-0`}>
+    <div className={`relative ${position === 'top' ? 'h-[60px] w-[100px]' : 'w-[50px] h-[100px]'} flex items-center justify-center z-0`}>
       {cards.map((_, i) => {
-        const offset = (i - (displayCount - 1) / 2) * 8;
+        const idx = i - mid;
+        // Same logic as player hand but tighter
+        const angle = idx * 8;
+        const arc = Math.pow(Math.abs(idx), 2) * 1.5;
+        
         let transform = '';
-        if (position === 'top') transform = `translateX(${offset}px) rotate(${offset}deg) translateY(-10px)`;
-        else transform = `translateY(${offset}px) rotate(${offset}deg)`;
+        if (position === 'top') {
+          // Arc like player hand but upside down and tight
+          transform = `translateX(${idx * 6}px) translateY(${arc - 10}px) rotate(${-angle}deg) rotate(180deg)`;
+        } else if (position === 'left') {
+          // Arc facing center
+          transform = `translateY(${idx * 4}px) translateX(${30 - arc}px) rotate(${angle}deg)`;
+        } else {
+          // Arc facing center (mirrored)
+          transform = `translateY(${idx * 4}px) translateX(${arc - 30}px) rotate(${-angle}deg)`;
+        }
 
         return (
-          <div
+          <CardBack
             key={i}
+            width={40}
+            height={60}
+            patternScale={0.5}
             style={{ transform, zIndex: i }}
-            className={`absolute ${position === 'top' ? 'w-6 h-10' : 'w-10 h-6'} bg-gradient-to-br from-red-800 to-red-600 rounded-sm border border-white/10 shadow-sm`}
+            className="absolute shadow-lg !rounded-[3px]"
           />
         );
       })}

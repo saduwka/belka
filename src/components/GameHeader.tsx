@@ -1,5 +1,6 @@
 import { Suit } from '../core/types';
 import { PlayerInfo } from './PlayerInfo';
+import { BelkaScore } from './BelkaScore';
 
 interface GameHeaderProps {
   scores: [number, number];
@@ -22,6 +23,9 @@ export const GameHeader = ({
   isMultiplayer, roomId, players, myPlayerIndex, currentPlayerIndex,
   trumpMapping, getSuitSymbol
 }: GameHeaderProps) => {
+  const myTeamSuit = trumpMapping ? (myTeam === 0 ? trumpMapping[0] : trumpMapping[1]) : null;
+  const otherTeamSuit = trumpMapping ? (otherTeam === 0 ? trumpMapping[0] : trumpMapping[1]) : null;
+
   return (
     <div className="absolute top-0 left-0 right-0 z-50 p-4 flex justify-between items-start pointer-events-none">
       <div className="flex flex-col gap-2 pointer-events-auto">
@@ -46,15 +50,16 @@ export const GameHeader = ({
           </div>
         )}
       </div>
-      <div className="flex gap-2 items-center pointer-events-auto">
-        <div className="flex gap-1">
-          <div className="bg-white/5 border border-white/10 p-2 rounded-xl text-center min-w-[44px]">
-            <span className="block text-[7px] opacity-40 uppercase font-black">ВЫ</span>
-            <span className="font-black text-xs">{eyes[myTeam]}👁️</span>
+      <div className="flex gap-4 items-center pointer-events-auto">
+        <div className="flex gap-3 items-center bg-black/40 backdrop-blur-xl border border-white/10 p-2 rounded-3xl">
+          <div className="flex flex-col items-center gap-1">
+            <span className="text-[7px] opacity-40 uppercase font-black tracking-widest">ВЫ</span>
+            <BelkaScore score={eyes[myTeam]} trumpSuit={myTeamSuit} />
           </div>
-          <div className="bg-white/5 border border-white/10 p-2 rounded-xl text-center min-w-[44px]">
-            <span className="block text-[7px] opacity-40 uppercase font-black">ОНИ</span>
-            <span className="font-black text-xs">{eyes[otherTeam]}👁️</span>
+          <div className="w-[1px] h-10 bg-white/10 mx-1" />
+          <div className="flex flex-col items-center gap-1">
+            <span className="text-[7px] opacity-40 uppercase font-black tracking-widest">ОНИ</span>
+            <BelkaScore score={eyes[otherTeam]} trumpSuit={otherTeamSuit} />
           </div>
         </div>
       </div>

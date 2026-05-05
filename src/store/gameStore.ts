@@ -24,6 +24,7 @@ interface GameStore extends GameState {
   toggleTurboMode: () => void;
   addLog: (msg: string) => void;
   forceSync: () => void;
+  leaveGame: () => void;
   logs: string[];
 }
 
@@ -667,5 +668,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     // Случай 4: обычный пинг Firebase, чтобы разбудить onValue (запустит бота)
     if (state.isMultiplayer) firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), { _sync: Date.now() });
+  },
+
+  leaveGame: () => {
+    const watchdog = (window as any)._belkaWatchdog;
+    if (watchdog) {
+      clearInterval(watchdog);
+      (window as any)._belkaWatchdog = null;
+    }
+    set({ 
+      phase: 'LOBBY', 
+      roomId: null, 
+      isMultiplayer: false, 
+      players: [], 
+      table: [], 
+      logs: [] 
+    });
   }
 }));

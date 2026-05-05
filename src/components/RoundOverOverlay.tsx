@@ -1,4 +1,5 @@
 import { GameState } from '../core/types';
+import { BelkaScore } from './BelkaScore';
 
 interface RoundOverOverlayProps {
   scores: [number, number];
@@ -14,13 +15,18 @@ interface RoundOverOverlayProps {
   submitVote: (vote: 'TAKE' | 'HANG') => void;
   setReady: (playerIndex: number) => void;
   resetRound: () => void;
+  trumpSuit: string | null;
+  trumpMapping?: Record<number, any>;
 }
 
 export const RoundOverOverlay = ({
   scores, eyes, myTeam, otherTeam, eggsCount, votingState,
   readyPlayers, timeLeft, myPlayerIndex, players,
-  submitVote, setReady, resetRound
+  submitVote, setReady, resetRound, trumpSuit, trumpMapping
 }: RoundOverOverlayProps) => {
+  const myTeamSuit = trumpMapping ? (myTeam === 0 ? trumpMapping[0] : trumpMapping[1]) : null;
+  const otherTeamSuit = trumpMapping ? (otherTeam === 0 ? trumpMapping[0] : trumpMapping[1]) : null;
+
   return (
     <div className="fixed inset-0 bg-black/90 z-[2000] flex items-center justify-center p-8 backdrop-blur-xl animate-in fade-in duration-500">
       <div className="text-center w-full max-w-sm">
@@ -44,10 +50,14 @@ export const RoundOverOverlay = ({
             <div className="text-[10px] font-black text-white/40 uppercase tracking-widest">НИЧЬЯ — ГЛАЗА ПЕРЕХОДЯТ ДАЛЬШЕ</div>
           </div>
         ) : (
-          <div className="flex justify-center gap-4 mb-10">
-            <div className="bg-white/5 border border-white/10 px-4 py-2 rounded-2xl">
-              <span className="block text-[8px] opacity-40 font-black mb-1 uppercase tracking-widest">ВСЕГО ГЛАЗ</span>
-              <span className="text-xl font-black text-white">{eyes[myTeam]} 👁️  :  {eyes[otherTeam]} 👁️</span>
+          <div className="flex justify-center gap-12 mb-10 items-end">
+            <div className="flex flex-col items-center gap-2">
+              <span className="text-[8px] opacity-40 font-black uppercase tracking-widest">ГЛАЗА МЫ</span>
+              <BelkaScore score={eyes[myTeam]} trumpSuit={myTeamSuit} />
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <span className="text-[8px] opacity-40 font-black uppercase tracking-widest">ГЛАЗА ОНИ</span>
+              <BelkaScore score={eyes[otherTeam]} trumpSuit={otherTeamSuit} />
             </div>
           </div>
         )}
