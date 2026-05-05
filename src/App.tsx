@@ -64,7 +64,9 @@ function App() {
       if (firstHuman?.name.trim().toLowerCase() !== myName) return;
 
       // 1. Если на столе 4 карты, но ход всё еще -1 (зависло удаление)
+      // ВАЖНО: не трогаем если belkaRoundTimer уже тикает — иначе гонка с playCard
       if (table.length === 4 && currentPlayerIndex === -1) {
+        if ((window as any).belkaRoundTimer) return; // 3s таймер уже запущен — ждём его
         addLog("🛡️ Watchdog: очистка застрявшего стола");
         forceSync();
       }
@@ -81,8 +83,9 @@ function App() {
 
       // 3. Если у всех 0 карт, но фаза не сменилась
       if (phase === 'PLAYING' && players.length === 4 && players.every(p => p.hand.length === 0)) {
+        if ((window as any).belkaRoundTimer) return; // Дождёмся таймера
         addLog("🛡️ Watchdog: принудительное завершение раунда");
-        resetRound();
+        forceSync(); // forceSync теперь сам обрабатывает этот кейс
       }
     }, 4000); 
 

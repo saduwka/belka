@@ -94,13 +94,28 @@ export const useGameStore = create<GameStore>((set, get) => ({
           const firstHuman = st.players.find((p: Player) => !p.isBot);
           if (firstHuman?.name.trim() !== myName) return;
 
-          get().addLog(
-            `⚠️ Watchdog: зависание (player=${st.currentPlayerIndex}, table=${st.table.length}) → forceSync`
-          );
-          set({ lastError: { message: '⚠️ Зависание — автовосстановление...', id: Date.now() } });
+          _wdLastChange = now; // Сбрасываем, чтобы не спамить
 
-          _wdLastChange = now; // Сбрасываем, чтобы не спамить forceSync
-          get().forceSync();
+          const stuckPlayer = st.players[st.currentPlayerIndex];
+
+          if (!stuckPlayer?.isBot && st.table.length < 4) {
+            // AFK человек — играем за него лучшую карту
+            get().addLog(
+              `⚠️ Watchdog: AFK [${st.currentPlayerIndex}] ${stuckPlayer?.name} → авто-ход`
+            );
+            set({ lastError: { message: `⚠️ ${stuckPlayer?.name} AFK — авто-ход`, id: Date.now() } });
+            const best = getBestBotMove(
+              stuckPlayer.hand, st.table, st.trumpSuit, st.playedSuits || []
+            );
+            if (best) get().playCard(st.currentPlayerIndex, best.id);
+          } else {
+            // Стол завис или бот не ходит — forceSync
+            get().addLog(
+              `⚠️ Watchdog: зависание (player=${st.currentPlayerIndex}, table=${st.table.length}) → forceSync`
+            );
+            set({ lastError: { message: '⚠️ Зависание — автовосстановление...', id: Date.now() } });
+            get().forceSync();
+          }
         }
       }, 3000);
       // Сохраняем интервал глобально чтобы при необходимости можно было очистить
