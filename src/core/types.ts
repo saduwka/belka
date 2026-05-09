@@ -40,6 +40,12 @@ export interface Player {
   isBot?: boolean;
 }
 
+/** One completed trick — used when POSTing `/api/ai/save-game` */
+export interface RoundTrickRecord {
+  cards: Card[];
+  winnerIndex: number;
+}
+
 export interface GameState {
   players: Player[];
   currentPlayerIndex: number;
@@ -65,4 +71,8 @@ export interface GameState {
   spectators: { id: string, name: string }[];
   creatorName?: string;
   lastError?: { message: string; id: number } | null;
+  roundTricks: RoundTrickRecord[];
+  /** Increments each time a round resolves to ROUND_OVER (for backend analytics). */
+  matchRoundNumber: number;
+  learningGameId: string;
 }

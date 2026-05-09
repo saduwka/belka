@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useGameStore } from './store/gameStore'
 import { useMultiplayerStore } from './store/multiplayerStore'
 import { getBestBotMove } from './core/engine'
+import { AIThinkingOverlay } from './components/AIThinkingOverlay'
 import { Card } from './components/Card'
 import { PlayerInfo } from './components/PlayerInfo'
 import { TableCard } from './components/TableCard'
@@ -29,7 +30,11 @@ function App() {
     initGame, playCard, resetRound, isMultiplayer, myPlayerIndex, roomId, trumpMapping,
     eggsCount, votingState, submitVote, readyPlayers, roundEndTime, setReady,
     spectators, takeSlot, toggleLobbyReady, startGame, isAutoPlay, toggleAutoPlay,
-    isFirstRound, playedSuits, isTurboMode, toggleTurboMode, logs, forceSync, addLog
+    isFirstRound, playedSuits,     isTurboMode, toggleTurboMode, logs, forceSync, addLog,
+    persistLearningRoundIfJudge,
+    executeBotTurn,
+    aiEnabled,
+    toggleAiEnabled,
   } = useGameStore();
 
   const { createRoom, joinRoom } = useMultiplayerStore();
@@ -76,12 +81,8 @@ function App() {
 
       // 2. Если ход бота, но он ничего не делает
       if (phase === 'PLAYING' && players[currentPlayerIndex]?.isBot && table.length < 4) {
-        const botHand = players[currentPlayerIndex].hand;
-        const bestCard = getBestBotMove(botHand, table, trumpSuit, playedSuits);
-        if (bestCard) {
-          addLog(`🛡️ Watchdog: подталкиваем бота [${currentPlayerIndex}]`);
-          playCard(currentPlayerIndex, bestCard.id);
-        }
+        addLog(`🛡️ Watchdog: подталкиваем бота [${currentPlayerIndex}]`);
+        void executeBotTurn(currentPlayerIndex);
       }
 
       // 3. Если у всех 0 карт, но фаза не сменилась
@@ -112,7 +113,12 @@ function App() {
       clearInterval(interval);
       clearInterval(backupInterval);
     };
-  }, [phase, currentPlayerIndex, table.length, players, trumpSuit, playedSuits, forceSync, playCard, resetRound, addLog, lobbyView]);
+  }, [phase, currentPlayerIndex, table.length, players, trumpSuit, playedSuits, forceSync, playCard, resetRound, addLog, lobbyView, executeBotTurn]);
+
+  useEffect(() => {
+    if (lobbyView || phase !== 'ROUND_OVER') return;
+    void persistLearningRoundIfJudge();
+  }, [phase, lobbyView, persistLearningRoundIfJudge]);
 
   // Скрипт авто-игры для игрока
   useEffect(() => {
@@ -319,6 +325,7 @@ function App() {
 
   return (
     <div className={`h-[100dvh] bg-[#020617] flex flex-col overflow-hidden font-sans select-none relative text-white touch-none ${isTurboMode ? 'turbo-active' : ''}`}>
+      <AIThinkingOverlay />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_#064e3b_0%,_#020617_70%)] opacity-40"></div>
       
       {/* Toast Overlay */}
@@ -335,6 +342,8 @@ function App() {
 
       <ActionButtons 
         isMultiplayer={isMultiplayer}
+        aiEnabled={aiEnabled}
+        onAiToggle={toggleAiEnabled}
         isAutoPlay={isAutoPlay}
         onAutoPlayToggle={toggleAutoPlay}
         isTurboMode={isTurboMode}

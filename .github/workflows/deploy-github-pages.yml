@@ -29,6 +29,8 @@ jobs:
           npm run build
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
+          # Optional: Repository variable BELKA_API_URL (Pi / tunnel). May be empty.
+          VITE_API_URL: ${{ vars.BELKA_API_URL }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

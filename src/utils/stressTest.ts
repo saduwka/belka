@@ -8,11 +8,18 @@ import {
   sortHand,
   validateMove,
 } from '../core/engine';
+import { fetchBotMove, getAiApiBase } from '../services/aiApi';
 
 export interface StressTestConfig {
-  rounds: number;        // Количество раундов (по умолчанию 100)
+  rounds: number; // Количество раундов (по умолчанию 100)
   hangTimeoutMs: number; // Таймаут детекта зависания (по умолчанию 5000ms)
-  logEveryN: number;     // Логировать каждые N раундов (по умолчанию 10)
+  logEveryN: number; // Логировать каждые N раундов (по умолчанию 10)
+  /** Ходы через POST /api/ai/bot-move с fallback на движок (нужен VITE_API_URL). */
+  useAiForMoves: boolean;
+  /** Таймаут одного запроса к API (мс). */
+  aiMoveTimeoutMs: number;
+  /** В режиме AI не больше стольких раундов (защита лимитов Gemini и туннеля). */
+  maxRoundsWithAi: number;
 }
 
 export interface StressTestResult {
@@ -52,6 +59,9 @@ export class BelkaStressTester {
       rounds: 100,
       hangTimeoutMs: 5000,
       logEveryN: 10,
+      useAiForMoves: false,
+      aiMoveTimeoutMs: 12000,
+      maxRoundsWithAi: 50,
       ...config,
     };
 
@@ -70,9 +80,18 @@ export class BelkaStressTester {
   }
 
   async run(): Promise<StressTestResult> {
+    const tryAi = this.config.useAiForMoves && Boolean(getAiApiBase());
+    const effectiveRounds =
+      tryAi ? Math.min(this.config.rounds, this.config.maxRoundsWithAi) : this.config.rounds;
+    if (tryAi && effectiveRounds < this.config.rounds) {
+      console.warn(
+        `[STRESS TEST] AI режим: ограничено ${effectiveRounds} раундов (maxRoundsWithAi)`
+      );
+    }
+
     // Сбрасываем результаты перед каждым запуском
     this.results = {
-      totalRounds: this.config.rounds,
+      totalRounds: effectiveRounds,
       completedRounds: 0,
       hangs: [],
       errors: [],
@@ -80,10 +99,10 @@ export class BelkaStressTester {
       maxRoundDuration: 0,
     };
 
-    console.log(`[STRESS TEST] 🚀 Запуск: ${this.config.rounds} раундов`);
+    console.log(`[STRESS TEST] 🚀 Запуск: ${effectiveRounds} раундов`);
     const durations: number[] = [];
 
-    for (let i = 0; i < this.config.rounds; i++) {
+    for (let i = 0; i < effectiveRounds; i++) {
       const roundStart = Date.now();
 
       try {
@@ -93,11 +112,11 @@ export class BelkaStressTester {
         this.results.completedRounds++;
 
         if ((i + 1) % this.config.logEveryN === 0) {
-          console.log(`[STRESS TEST] ✅ Раунд ${i + 1}/${this.config.rounds} (${duration}ms)`);
+          console.log(`[STRESS TEST] ✅ Раунд ${i + 1}/${effectiveRounds} (${duration}ms)`);
         }
 
         if (this.onProgress) {
-          this.onProgress(i + 1, this.config.rounds, `Раунд ${i + 1} завершен за ${duration}ms`);
+          this.onProgress(i + 1, effectiveRounds, `Раунд ${i + 1} завершен за ${duration}ms`);
         }
 
         // Уступаем UI-потоку каждые 10 раундов, чтобы прогресс-бар обновлялся
@@ -115,7 +134,7 @@ export class BelkaStressTester {
         console.error(`[STRESS TEST] ❌ Ошибка в раунде ${i + 1}:`, error);
 
         if (this.onProgress) {
-          this.onProgress(i + 1, this.config.rounds, `❌ Ошибка в раунде ${i + 1}`);
+          this.onProgress(i + 1, effectiveRounds, `❌ Ошибка в раунде ${i + 1}`);
         }
       }
     }
@@ -125,13 +144,46 @@ export class BelkaStressTester {
     this.results.maxRoundDuration = durations.length > 0 ? Math.max(...durations) : 0;
 
     console.log(`\n[STRESS TEST] 🏁 Завершено:`);
-    console.log(`  ✅ Раундов: ${this.results.completedRounds}/${this.config.rounds}`);
+    console.log(`  ✅ Раундов: ${this.results.completedRounds}/${this.results.totalRounds}`);
     console.log(`  ⏱️  Среднее время: ${this.results.avgRoundDuration.toFixed(0)}ms`);
     console.log(`  ⏱️  Макс. время: ${this.results.maxRoundDuration}ms`);
     console.log(`  🐛 Зависаний: ${this.results.hangs.length}`);
     console.log(`  ❌ Ошибок: ${this.results.errors.length}`);
 
     return this.results;
+  }
+
+  private async pickCardForStress(
+    hand: Card[],
+    table: Card[],
+    trumpSuit: Suit,
+    playedSuits: Suit[],
+    scores: [number, number]
+  ): Promise<Card | null> {
+    const tryAi = this.config.useAiForMoves && Boolean(getAiApiBase());
+    if (tryAi) {
+      try {
+        const res = await fetchBotMove(
+          {
+            hand: hand.map((c) => c.id),
+            table: table.map((c) => c.id),
+            trumpSuit,
+            playedSuits,
+            scores,
+            eyes: [0, 0] as [number, number],
+          },
+          { timeoutMs: this.config.aiMoveTimeoutMs }
+        );
+        const picked = hand.find((c) => c.id === res.card);
+        if (picked) {
+          const v = validateMove(picked, hand, table, trumpSuit, playedSuits);
+          if (v.valid) return picked;
+        }
+      } catch {
+        /* fallback below */
+      }
+    }
+    return getBestBotMove(hand, table, trumpSuit, playedSuits);
   }
 
   private async runSingleRound(roundNumber: number): Promise<void> {
@@ -210,7 +262,13 @@ export class BelkaStressTester {
         break; // Раунд завершен
       }
 
-      const bestCard = getBestBotMove(currentPlayer.hand, table, trumpSuit, playedSuits);
+      const bestCard = await this.pickCardForStress(
+        currentPlayer.hand,
+        table,
+        trumpSuit,
+        playedSuits,
+        scores
+      );
 
       if (!bestCard) {
         this.results.errors.push({

@@ -1,8 +1,25 @@
 import { create } from 'zustand';
-import { GameState, Card, Suit, Player, CARD_POINTS } from '../core/types';
-import { createDeck, shuffleDeck, dealCards, isTrump, determineTrickWinner, validateMove, sortHand, getBestBotMove } from '../core/engine';
+import { GameState, Suit, Player, CARD_POINTS, RoundTrickRecord } from '../core/types';
+import { createDeck, shuffleDeck, dealCards, determineTrickWinner, validateMove, sortHand, getBestBotMove } from '../core/engine';
 import { db } from '../firebase';
 import { ref, update as firebaseUpdate, onValue, set as firebaseDbSet } from 'firebase/database';
+import { fetchBotMove, getAiApiBase, saveGameToAiBackend } from '../services/aiApi';
+
+let lastPersistedLearningRound = -1;
+
+function resetLearningPersistence() {
+  lastPersistedLearningRound = -1;
+}
+
+function readAiEnabled(): boolean {
+  try {
+    return localStorage.getItem('belka_ai_enabled') !== '0';
+  } catch {
+    return true;
+  }
+}
+
+const DEFAULT_AI_MOVE_TIMEOUT_MS = 12_000;
 
 interface GameStore extends GameState {
   isMultiplayer: boolean;
@@ -26,6 +43,11 @@ interface GameStore extends GameState {
   forceSync: () => void;
   leaveGame: () => void;
   logs: string[];
+  aiEnabled: boolean;
+  aiThinking: boolean;
+  toggleAiEnabled: () => void;
+  executeBotTurn: (playerIndex: number) => Promise<void>;
+  persistLearningRoundIfJudge: () => Promise<void>;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -53,6 +75,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
   isAutoPlay: false,
   isTurboMode: false,
   logs: [],
+  roundTricks: [],
+  matchRoundNumber: 0,
+  learningGameId: '',
+  aiEnabled: readAiEnabled(),
+  aiThinking: false,
+
+  toggleAiEnabled: () => {
+    const next = !get().aiEnabled;
+    try {
+      localStorage.setItem('belka_ai_enabled', next ? '1' : '0');
+    } catch {
+      /* ignore */
+    }
+    set({ aiEnabled: next });
+  },
 
   addLog: (msg: string) => {
     console.log(`[BELKA GAME]: ${msg}`);
@@ -140,7 +177,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
             table: remoteState.table || [],
             playedSuits: remoteState.playedSuits || [],
             spectators: remoteState.spectators || [],
-            readyPlayers: remoteState.readyPlayers || {}
+            readyPlayers: remoteState.readyPlayers || {},
+            roundTricks: remoteState.roundTricks || [],
+            matchRoundNumber: typeof remoteState.matchRoundNumber === 'number' ? remoteState.matchRoundNumber : 0,
+            learningGameId: typeof remoteState.learningGameId === 'string' ? remoteState.learningGameId : roomId || '',
           };
           if (normalizedState.readyPlayers._init) {
              normalizedState.readyPlayers = {};
@@ -212,8 +252,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
                   const currentTable = st.table || [];
                   // Фикс #3: убрали currentTable.length < 4 — бот должен ходить даже если стол только что очистился после взятки
                   if (st.phase === 'PLAYING' && st.currentPlayerIndex === cpIdx && st.players[cpIdx].isBot) {
-                    const best = getBestBotMove(st.players[cpIdx].hand, currentTable, st.trumpSuit, st.playedSuits || []);
-                    if (best) get().playCard(cpIdx, best.id);
+                    void get().executeBotTurn(cpIdx);
                   }
                 }, 1500);
               }
@@ -231,9 +270,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ];
 
         firebaseDbSet(stateRef, {
-          players, phase: 'LOBBY', scores: [0, 0], eyes: [0, 0], isFirstRound: true,
-          eggsCount: 0, spectators: [], readyPlayers: { 0: true }, table: [],
-          playedSuits: [], creatorName: cleanName
+          players,
+          phase: 'LOBBY',
+          scores: [0, 0],
+          eyes: [0, 0],
+          isFirstRound: true,
+          eggsCount: 0,
+          spectators: [],
+          readyPlayers: { 0: true },
+          table: [],
+          playedSuits: [],
+          creatorName: cleanName,
+          roundTricks: [],
+          matchRoundNumber: 0,
+          learningGameId: roomId,
         });
       } else {
         // Добавляем в зрители только если игрока реально нет в слотах
@@ -263,21 +313,38 @@ export const useGameStore = create<GameStore>((set, get) => ({
         { id: 2, name: 'Бот 2', hand: sortHand(hands[2], 'CLUBS'), team: 0, isBot: true },
         { id: 3, name: 'Бот 3', hand: sortHand(hands[3], 'CLUBS'), team: 1, isBot: true },
       ];
+      resetLearningPersistence();
+      const learningGameId = `local-${Date.now()}`;
       set({
-        players, currentPlayerIndex: starterIndex, firstPlayerInTrick: starterIndex,
-        trumpSuit: 'CLUBS', trumpSetterTeam: starterIndex % 2 === 0 ? 0 : 1, phase: 'PLAYING',
-        table: [], scores: [0, 0], eyes: [0, 0], isFirstRound: true, lastTrickWinnerIndex: null,
-        playedSuits: [], isMultiplayer: false, myPlayerIndex: 0, trumpMapping: mapping,
-        eggsCount: 0, readyPlayers: {}, spectators: [], creatorName: cleanName
+        players,
+        currentPlayerIndex: starterIndex,
+        firstPlayerInTrick: starterIndex,
+        trumpSuit: 'CLUBS',
+        trumpSetterTeam: starterIndex % 2 === 0 ? 0 : 1,
+        phase: 'PLAYING',
+        table: [],
+        scores: [0, 0],
+        eyes: [0, 0],
+        isFirstRound: true,
+        lastTrickWinnerIndex: null,
+        playedSuits: [],
+        isMultiplayer: false,
+        myPlayerIndex: 0,
+        trumpMapping: mapping,
+        eggsCount: 0,
+        readyPlayers: {},
+        spectators: [],
+        creatorName: cleanName,
+        roundTricks: [],
+        matchRoundNumber: 0,
+        learningGameId,
       });
 
       // Если в одиночной игре первый ход у бота — запускаем его
       if (starterIndex !== 0) {
         const delay = get().isTurboMode ? 0 : 1000;
         setTimeout(() => {
-          const st = get();
-          const best = getBestBotMove(st.players[starterIndex].hand, [], st.trumpSuit, st.playedSuits);
-          if (best) get().playCard(starterIndex, best.id);
+          void get().executeBotTurn(starterIndex);
         }, delay);
       }
     }
@@ -328,9 +395,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
     for (let i = 0; i < 4; i++) mapping[(starterIndex + i) % 4] = suitOrder[i];
     const finalPlayers = state.players.map((p, i) => ({ ...p, hand: sortHand(hands[i], 'CLUBS') }));
     firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), {
-      players: finalPlayers, phase: 'PLAYING', currentPlayerIndex: starterIndex,
-      firstPlayerInTrick: starterIndex, trumpSuit: 'CLUBS', trumpSetterTeam: starterIndex % 2 === 0 ? 0 : 1, trumpMapping: mapping,
+      players: finalPlayers,
+      phase: 'PLAYING',
+      currentPlayerIndex: starterIndex,
+      firstPlayerInTrick: starterIndex,
+      trumpSuit: 'CLUBS',
+      trumpSetterTeam: starterIndex % 2 === 0 ? 0 : 1,
+      trumpMapping: mapping,
       readyPlayers: { _init: true },
+      roundTricks: [],
+      matchRoundNumber: 0,
+      learningGameId: state.roomId || '',
     });
   },
 
@@ -388,17 +463,36 @@ export const useGameStore = create<GameStore>((set, get) => ({
         const winnerTeam = currentState.players[winnerIndex].team;
         const newScores: [number, number] = [...currentState.scores];
         newScores[winnerTeam] += trickPoints;
+
+        const trickRecord: RoundTrickRecord = { cards: [...currentState.table], winnerIndex };
+        const mergedRoundTricks = [...(currentState.roundTricks || []), trickRecord];
+        const prevMatchRound = currentState.matchRoundNumber ?? 0;
+
         // Фикс #2: сохраняем winnerIndex вместо null, чтобы forceSync мог восстановить состояние
-        let finalUpdate: Partial<GameState> = { table: [], scores: newScores, currentPlayerIndex: winnerIndex, firstPlayerInTrick: winnerIndex, lastTrickWinnerIndex: winnerIndex, readyPlayers: { _init: true } as any };
+        let finalUpdate: Partial<GameState> = {
+          table: [],
+          scores: newScores,
+          currentPlayerIndex: winnerIndex,
+          firstPlayerInTrick: winnerIndex,
+          lastTrickWinnerIndex: winnerIndex,
+          readyPlayers: { _init: true } as GameState['readyPlayers'],
+          roundTricks: mergedRoundTricks,
+        };
         if (isRoundOver) {
           const currentEyes = [...currentState.eyes];
           const team0Points = newScores[0];
           const team1Points = newScores[1];
           let currentEggs = currentState.eggsCount || 0;
 
-          if (team0Points === 60 && team1Points === 60) { 
+          if (team0Points === 60 && team1Points === 60) {
             currentEggs += 1;
-            finalUpdate = { ...finalUpdate, eggsCount: currentEggs, phase: 'ROUND_OVER', isFirstRound: false }; 
+            finalUpdate = {
+              ...finalUpdate,
+              eggsCount: currentEggs,
+              phase: 'ROUND_OVER',
+              isFirstRound: false,
+              matchRoundNumber: prevMatchRound + 1,
+            };
           } else {
             const wTeam = team0Points > team1Points ? 0 : 1;
             const loserPoints = wTeam === 0 ? team1Points : team0Points;
@@ -420,15 +514,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
             let eyesTotal = eyesToAward + currentEggs;
             currentEyes[wTeam] = Math.min(12, currentEyes[wTeam] + eyesTotal);
             
-            finalUpdate = { 
-              ...finalUpdate, 
-              eyes: currentEyes as [number, number], 
+            finalUpdate = {
+              ...finalUpdate,
+              eyes: currentEyes as [number, number],
               eggsCount: 0,
-              phase: currentEyes[wTeam] >= 12 ? 'GAME_OVER' : 'ROUND_OVER', 
+              phase: currentEyes[wTeam] >= 12 ? 'GAME_OVER' : 'ROUND_OVER',
               isFirstRound: false,
               readyPlayers: { _init: true },
-              roundEndTime: null as any
-            }; 
+              roundEndTime: null as unknown as number,
+              matchRoundNumber: prevMatchRound + 1,
+            };
           }
         }
         if (state.isMultiplayer) firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), finalUpdate);
@@ -439,8 +534,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             const delay = st.isTurboMode ? 0 : 1000;
             setTimeout(() => {
               const currentSt = get();
-              const best = getBestBotMove(currentSt.players[currentSt.currentPlayerIndex].hand, [], currentSt.trumpSuit, currentSt.playedSuits);
-              if (best) get().playCard(currentSt.currentPlayerIndex, best.id);
+              void get().executeBotTurn(currentSt.currentPlayerIndex);
             }, delay);
           }
         }
@@ -465,8 +559,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         setTimeout(() => {
           const currentSt = get();
           if (currentSt.currentPlayerIndex === st.currentPlayerIndex) {
-            const best = getBestBotMove(currentSt.players[currentSt.currentPlayerIndex].hand, currentSt.table, currentSt.trumpSuit, currentSt.playedSuits);
-            if (best) get().playCard(currentSt.currentPlayerIndex, best.id);
+            void get().executeBotTurn(currentSt.currentPlayerIndex);
           }
         }, delay);
       }
@@ -541,14 +634,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const nextTrumpSuit = state.trumpMapping ? state.trumpMapping[starterIndex] : 'CLUBS';
     const newPlayers = state.players.map((p, i) => ({ ...p, hand: sortHand(hands[i], nextTrumpSuit) }));
     const nextState: Partial<GameState> = {
-      players: newPlayers, table: [], scores: [0, 0], phase: 'PLAYING',
-      currentPlayerIndex: starterIndex, firstPlayerInTrick: starterIndex,
+      players: newPlayers,
+      table: [],
+      scores: [0, 0],
+      phase: 'PLAYING',
+      currentPlayerIndex: starterIndex,
+      firstPlayerInTrick: starterIndex,
       lastTrickWinnerIndex: null, // Фикс #2: обнуляем только здесь — при старте нового раунда
-      playedSuits: [], lastError: null,
-      trumpSuit: nextTrumpSuit, trumpSetterTeam: starterIndex % 2 === 0 ? 0 : 1,
-      votingState: null as any,
+      playedSuits: [],
+      lastError: null,
+      trumpSuit: nextTrumpSuit,
+      trumpSetterTeam: starterIndex % 2 === 0 ? 0 : 1,
+      votingState: null as unknown as GameState['votingState'],
       readyPlayers: { _init: true }, // Используем заглушку, чтобы Firebase не удалял пустой объект
-      roundEndTime: null as any,
+      roundEndTime: null as unknown as number,
+      roundTricks: [],
     };
     if (state.isMultiplayer && state.creatorName?.trim() === localStorage.getItem('belka_player_name')?.trim()) {
       firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), nextState);
@@ -556,12 +656,108 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ ...nextState, readyPlayers: {} });
       if (starterIndex !== 0) {
         const delay = state.isTurboMode ? 0 : 1000;
-        setTimeout(() => { 
-          const st = get(); 
-          const best = getBestBotMove(st.players[starterIndex].hand, st.table, st.trumpSuit, st.playedSuits); 
-          if (best) get().playCard(starterIndex, best.id); 
+        setTimeout(() => {
+          void get().executeBotTurn(starterIndex);
         }, delay);
       }
+    }
+  },
+
+  executeBotTurn: async (playerIndex) => {
+    const state = get();
+    if (state.phase !== 'PLAYING') return;
+    if (state.currentPlayerIndex !== playerIndex) return;
+    const player = state.players[playerIndex];
+    if (!player?.isBot) return;
+    const hand = player.hand || [];
+    if (hand.length === 0) return;
+    if (state.table.length >= 4) return;
+
+    const tryAi = state.aiEnabled && Boolean(getAiApiBase());
+
+    if (tryAi) {
+      set({ aiThinking: true });
+      let usedAi = false;
+      try {
+        const timeoutMs = state.isTurboMode ? 4000 : DEFAULT_AI_MOVE_TIMEOUT_MS;
+        const res = await fetchBotMove(
+          {
+            hand: hand.map((c) => c.id),
+            table: state.table.map((c) => c.id),
+            trumpSuit: state.trumpSuit ?? 'CLUBS',
+            playedSuits: state.playedSuits || [],
+            scores: state.scores,
+            eyes: state.eyes,
+          },
+          { timeoutMs }
+        );
+        const picked = hand.find((c) => c.id === res.card);
+        if (picked) {
+          const ruleCheck = validateMove(
+            picked,
+            hand,
+            state.table,
+            state.trumpSuit,
+            state.playedSuits || []
+          );
+          if (ruleCheck.valid) {
+            get().playCard(playerIndex, res.card);
+            usedAi = true;
+          } else {
+            get().addLog(
+              `🤖 AI ход ${res.card} отклонён (${ruleCheck.reason || 'правила'}) → движок`
+            );
+            console.warn('[executeBotTurn] AI illegal move, engine fallback', res.card, ruleCheck.reason);
+          }
+        }
+      } catch (e) {
+        console.warn('[executeBotTurn] AI failed, using engine', e);
+      } finally {
+        set({ aiThinking: false });
+      }
+      if (usedAi) return;
+    }
+
+    const st = get();
+    if (st.phase !== 'PLAYING' || st.currentPlayerIndex !== playerIndex) return;
+    const pNow = st.players[playerIndex];
+    if (!pNow?.isBot) return;
+    const best = getBestBotMove(pNow.hand, st.table, st.trumpSuit, st.playedSuits);
+    if (best) get().playCard(playerIndex, best.id);
+  },
+
+  persistLearningRoundIfJudge: async () => {
+    const state = get();
+    if (state.phase !== 'ROUND_OVER') return;
+    if (!getAiApiBase()) return;
+    const myName = (localStorage.getItem('belka_player_name') || 'Игрок').trim();
+    const firstHuman = state.players.find((p) => !p.isBot);
+    if (firstHuman?.name.trim() !== myName) return;
+
+    const rn = state.matchRoundNumber;
+    if (rn === lastPersistedLearningRound || rn <= 0) return;
+    lastPersistedLearningRound = rn;
+
+    let winner_team: 0 | 1 = 0;
+    if (state.scores[1] > state.scores[0]) winner_team = 1;
+    else if (state.scores[0] === state.scores[1]) winner_team = 0;
+
+    try {
+      await saveGameToAiBackend({
+        gameId: state.learningGameId || state.roomId || 'local',
+        roundNumber: rn,
+        players: state.players.map((p) => p.name),
+        team_1_score: state.scores[0],
+        team_2_score: state.scores[1],
+        winner_team,
+        trump_suit: state.trumpSuit ?? 'CLUBS',
+        tricks: (state.roundTricks || []).map((t) => ({
+          cards: t.cards.map((c) => c.id),
+          winnerIndex: t.winnerIndex,
+        })),
+      });
+    } catch (e) {
+      console.warn('[persistLearningRoundIfJudge]', e);
     }
   },
 
@@ -585,22 +781,30 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const currentEyes = [...state.eyes] as [number, number];
       const [team0Points, team1Points] = scores;
       let currentEggs = state.eggsCount || 0;
+      const nextMatchRound = (state.matchRoundNumber ?? 0) + 1;
 
       if (team0Points === 60 && team1Points === 60) {
         currentEggs += 1;
-        return { scores, eggsCount: currentEggs, phase: 'ROUND_OVER', isFirstRound: false, readyPlayers: { _init: true } as any };
+        return {
+          scores,
+          eggsCount: currentEggs,
+          phase: 'ROUND_OVER',
+          isFirstRound: false,
+          readyPlayers: { _init: true } as GameState['readyPlayers'],
+          matchRoundNumber: nextMatchRound,
+        };
       }
 
       const wTeam = team0Points > team1Points ? 0 : 1;
-      const loserPoints  = wTeam === 0 ? team1Points : team0Points;
+      const loserPoints = wTeam === 0 ? team1Points : team0Points;
       const winnerPoints = wTeam === 0 ? team0Points : team1Points;
       let eyesToAward = 1;
       if (state.isFirstRound) {
         eyesToAward = winnerPoints === 120 ? 4 : 2;
       } else {
-        if (winnerPoints === 120)  eyesToAward = 4;
+        if (winnerPoints === 120) eyesToAward = 4;
         else if (loserPoints < 31) eyesToAward = 2;
-        else                       eyesToAward = 1;
+        else eyesToAward = 1;
       }
       currentEyes[wTeam] = Math.min(12, currentEyes[wTeam] + eyesToAward + currentEggs);
       return {
@@ -609,8 +813,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         eggsCount: 0,
         phase: currentEyes[wTeam] >= 12 ? 'GAME_OVER' : 'ROUND_OVER',
         isFirstRound: false,
-        readyPlayers: { _init: true } as any,
-        roundEndTime: null as any,
+        readyPlayers: { _init: true } as GameState['readyPlayers'],
+        roundEndTime: null as unknown as number,
+        matchRoundNumber: nextMatchRound,
       };
     };
     // ──────────────────────────────────────────────────────────────────────
@@ -623,20 +828,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const newScores: [number, number] = [...state.scores];
       newScores[state.players[winnerIndex].team] += trickPoints;
 
+      const trickSnap: RoundTrickRecord = { cards: [...state.table], winnerIndex };
+      const mergedTricks = [...(state.roundTricks || []), trickSnap];
+
       // Были ли это последние карты?
       const isRoundOver = state.players.every(p => (p.hand || []).length === 0);
       let finalUpdate: Partial<GameState>;
       if (isRoundOver) {
         get().addLog(`🔄 forceSync: последняя взятка → ROUND_OVER`);
         finalUpdate = {
-          table: [], currentPlayerIndex: winnerIndex, firstPlayerInTrick: winnerIndex,
-          lastTrickWinnerIndex: winnerIndex, ...resolveRoundOver(newScores),
+          table: [],
+          currentPlayerIndex: winnerIndex,
+          firstPlayerInTrick: winnerIndex,
+          lastTrickWinnerIndex: winnerIndex,
+          roundTricks: mergedTricks,
+          ...resolveRoundOver(newScores),
         };
       } else {
         finalUpdate = {
-          table: [], scores: newScores,
-          currentPlayerIndex: winnerIndex, firstPlayerInTrick: winnerIndex,
-          lastTrickWinnerIndex: winnerIndex, readyPlayers: { _init: true } as any,
+          table: [],
+          scores: newScores,
+          currentPlayerIndex: winnerIndex,
+          firstPlayerInTrick: winnerIndex,
+          lastTrickWinnerIndex: winnerIndex,
+          readyPlayers: { _init: true } as GameState['readyPlayers'],
+          roundTricks: mergedTricks,
         };
       }
 
@@ -659,6 +875,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const finalUpdate: Partial<GameState> = {
         currentPlayerIndex: state.lastTrickWinnerIndex ?? 0,
         firstPlayerInTrick: state.lastTrickWinnerIndex ?? 0,
+        roundTricks: state.roundTricks || [],
         ...resolveRoundOver(state.scores),
       };
       if (state.isMultiplayer) firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), finalUpdate);
@@ -676,13 +893,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
       clearInterval(watchdog);
       (window as any)._belkaWatchdog = null;
     }
-    set({ 
-      phase: 'LOBBY', 
-      roomId: null, 
-      isMultiplayer: false, 
-      players: [], 
-      table: [], 
-      logs: [] 
+    resetLearningPersistence();
+    set({
+      phase: 'LOBBY',
+      roomId: null,
+      isMultiplayer: false,
+      players: [],
+      table: [],
+      logs: [],
+      roundTricks: [],
+      matchRoundNumber: 0,
+      learningGameId: '',
+      aiThinking: false,
     });
   }
 }));

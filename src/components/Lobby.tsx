@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useGameStore } from '../store/gameStore';
 import { StressTestModal } from './StressTestModal';
 
 interface LobbyProps {
@@ -17,6 +18,9 @@ export const Lobby = ({
   onStartSingle, onCreateRoom, onJoinRoom, isConnecting
 }: LobbyProps) => {
   const [showStressTest, setShowStressTest] = useState(false);
+  const aiEnabled = useGameStore((s) => s.aiEnabled);
+  const toggleAiEnabled = useGameStore((s) => s.toggleAiEnabled);
+
   return (
     <div className="h-screen bg-[#020617] flex items-center justify-center p-6 font-sans text-white overflow-hidden relative">
       <div className="absolute inset-0 bg-gradient-to-tr from-emerald-900/20 to-blue-900/20"></div>
@@ -24,6 +28,24 @@ export const Lobby = ({
         <h1 className="text-6xl font-black tracking-tighter mb-2 italic drop-shadow-2xl text-emerald-400">БЕЛКА</h1>
         <p className="text-white/40 text-[10px] mb-12 uppercase tracking-[0.5em] font-black">Professional Edition</p>
         
+        <div className="mb-6 flex items-center justify-between rounded-2xl border border-white/10 bg-black/40 px-4 py-3 backdrop-blur-xl">
+          <div className="text-left">
+            <div className="text-[10px] font-black uppercase tracking-widest text-white/50">Нейроботы</div>
+            <div className="text-[9px] text-white/35">Нужен VITE_API_URL в сборке</div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={aiEnabled}
+            onClick={toggleAiEnabled}
+            className={`relative h-8 w-14 rounded-full border border-white/15 transition-colors ${aiEnabled ? 'bg-blue-500/80' : 'bg-white/10'}`}
+          >
+            <span
+              className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow-md transition-transform ${aiEnabled ? 'left-7' : 'left-1'}`}
+            />
+          </button>
+        </div>
+
         <div className="mb-8 space-y-2 text-left">
            <label className="text-[10px] font-black text-white/30 uppercase tracking-widest ml-4">ВАШЕ ИМЯ</label>
            <input 
