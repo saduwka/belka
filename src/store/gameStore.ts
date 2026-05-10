@@ -1,14 +1,18 @@
 import { create } from 'zustand';
 import { GameState, Suit, Player, CARD_POINTS, RoundTrickRecord } from '../core/types';
-import { createDeck, shuffleDeck, dealCards, determineTrickWinner, validateMove, sortHand, getBestBotMove } from '../core/engine';
+import { createDeck, shuffleDeck, dealCards, determineTrickWinner, validateMove, sortHand, getBestBotMove, getLegalCardIds } from '../core/engine';
 import { db } from '../firebase';
 import { ref, update as firebaseUpdate, onValue, set as firebaseDbSet } from 'firebase/database';
-import { fetchBotMove, getAiApiBase, saveGameToAiBackend } from '../services/aiApi';
+import { fetchBotMove, getAiApiBase, isAiApiConfigured, postAnalyzeGames, saveGameToAiBackend } from '../services/aiApi';
 
 let lastPersistedLearningRound = -1;
 
+/** Дедуп повторных вызовов analyze-games за одно и то же окончание матча. */
+let lastAnalyzeGamesKey = '';
+
 function resetLearningPersistence() {
   lastPersistedLearningRound = -1;
+  lastAnalyzeGamesKey = '';
 }
 
 function readAiEnabled(): boolean {
@@ -48,6 +52,7 @@ interface GameStore extends GameState {
   toggleAiEnabled: () => void;
   executeBotTurn: (playerIndex: number) => Promise<void>;
   persistLearningRoundIfJudge: () => Promise<void>;
+  analyzeGamesAfterMatchIfJudge: () => Promise<void>;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -664,75 +669,104 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   executeBotTurn: async (playerIndex) => {
+    const aiLog =
+      import.meta.env.DEV || import.meta.env.VITE_AI_DEBUG === '1'
+        ? (...a: unknown[]) => console.log('[BelkaAI:bot]', ...a)
+        : () => {};
+
     const state = get();
-    if (state.phase !== 'PLAYING') return;
-    if (state.currentPlayerIndex !== playerIndex) return;
+    if (state.phase !== 'PLAYING') {
+      aiLog('skip: phase', state.phase);
+      return;
+    }
+    if (state.currentPlayerIndex !== playerIndex) {
+      aiLog('skip: не тот игрок', { want: playerIndex, current: state.currentPlayerIndex });
+      return;
+    }
     const player = state.players[playerIndex];
-    if (!player?.isBot) return;
+    if (!player?.isBot) {
+      aiLog('skip: не бот', playerIndex);
+      return;
+    }
     const hand = player.hand || [];
-    if (hand.length === 0) return;
-    if (state.table.length >= 4) return;
-
-    const tryAi = state.aiEnabled && Boolean(getAiApiBase());
-
-    if (tryAi) {
-      set({ aiThinking: true });
-      let usedAi = false;
-      try {
-        const timeoutMs = state.isTurboMode ? 4000 : DEFAULT_AI_MOVE_TIMEOUT_MS;
-        const res = await fetchBotMove(
-          {
-            hand: hand.map((c) => c.id),
-            table: state.table.map((c) => c.id),
-            trumpSuit: state.trumpSuit ?? 'CLUBS',
-            playedSuits: state.playedSuits || [],
-            scores: state.scores,
-            eyes: state.eyes,
-          },
-          { timeoutMs }
-        );
-        const picked = hand.find((c) => c.id === res.card);
-        if (picked) {
-          const ruleCheck = validateMove(
-            picked,
-            hand,
-            state.table,
-            state.trumpSuit,
-            state.playedSuits || []
-          );
-          if (ruleCheck.valid) {
-            get().playCard(playerIndex, res.card);
-            usedAi = true;
-          } else {
-            get().addLog(
-              `🤖 AI ход ${res.card} отклонён (${ruleCheck.reason || 'правила'}) → движок`
-            );
-            console.warn('[executeBotTurn] AI illegal move, engine fallback', res.card, ruleCheck.reason);
-          }
-        }
-      } catch (e) {
-        console.warn('[executeBotTurn] AI failed, using engine', e);
-      } finally {
-        set({ aiThinking: false });
-      }
-      if (usedAi) return;
+    if (hand.length === 0) {
+      aiLog('skip: пустая рука');
+      return;
+    }
+    if (state.table.length >= 4) {
+      aiLog('skip: стол полный');
+      return;
     }
 
-    const st = get();
-    if (st.phase !== 'PLAYING' || st.currentPlayerIndex !== playerIndex) return;
-    const pNow = st.players[playerIndex];
-    if (!pNow?.isBot) return;
-    const best = getBestBotMove(pNow.hand, st.table, st.trumpSuit, st.playedSuits);
-    if (best) get().playCard(playerIndex, best.id);
+    const tryAi = state.aiEnabled && isAiApiConfigured();
+    aiLog('tryAi=', tryAi, 'aiEnabled=', state.aiEnabled, 'api=', getAiApiBase() || '(proxy /api)');
+
+    if (!tryAi) {
+      aiLog(
+        'skip: ход бота только через AI — включи AI и VITE_API_URL (или dev-прокси)'
+      );
+      return;
+    }
+
+    const legalIds = getLegalCardIds(
+      hand,
+      state.table,
+      state.trumpSuit,
+      state.playedSuits || []
+    );
+    if (legalIds.length === 0) {
+      aiLog('нет легальных ходов');
+      get().addLog('🤖 Бот: нет легальных ходов');
+      return;
+    }
+
+    set({ aiThinking: true });
+    try {
+      const timeoutMs = state.isTurboMode ? 4000 : DEFAULT_AI_MOVE_TIMEOUT_MS;
+      const res = await fetchBotMove(
+        {
+          playerIndex,
+          trickLeaderIndex: state.firstPlayerInTrick,
+          hand: hand.map((c) => c.id),
+          legalMoves: legalIds,
+          table: state.table.map((c) => c.id),
+          trumpSuit: state.trumpSuit ?? 'CLUBS',
+          playedSuits: state.playedSuits || [],
+          scores: state.scores,
+          eyes: state.eyes,
+        },
+        { timeoutMs }
+      );
+      if (!legalIds.includes(res.card)) {
+        aiLog('AI вернул карту вне legalMoves', res.card, legalIds);
+      }
+      const picked = hand.find((c) => c.id === res.card);
+      if (picked && legalIds.includes(res.card)) {
+        get().playCard(playerIndex, res.card);
+        aiLog('playCard AI ok', res.card);
+      } else if (picked) {
+        get().addLog(`🤖 AI вернул недопустимую карту ${res.card} — ход отменён`);
+        aiLog('карта не из legalMoves', res.card);
+      } else {
+        get().addLog(`🤖 AI вернул карту не из руки: ${res.card}`);
+        aiLog('AI вернул карту не из руки', res.card, 'рука', hand.map((c) => c.id));
+      }
+    } catch (e) {
+      console.warn('[executeBotTurn] AI failed', e);
+      aiLog('исключение fetch', e);
+      get().addLog('🤖 Ошибка запроса к AI — ход бота не сделан');
+    } finally {
+      set({ aiThinking: false });
+    }
   },
 
   persistLearningRoundIfJudge: async () => {
     const state = get();
     if (state.phase !== 'ROUND_OVER') return;
-    if (!getAiApiBase()) return;
+    if (!isAiApiConfigured()) return;
     const myName = (localStorage.getItem('belka_player_name') || 'Игрок').trim();
     const firstHuman = state.players.find((p) => !p.isBot);
-    if (firstHuman?.name.trim() !== myName) return;
+    if ((firstHuman?.name ?? '').trim() !== myName) return;
 
     const rn = state.matchRoundNumber;
     if (rn === lastPersistedLearningRound || rn <= 0) return;
@@ -747,10 +781,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
         gameId: state.learningGameId || state.roomId || 'local',
         roundNumber: rn,
         players: state.players.map((p) => p.name),
+        playerSeats: state.players.map((p) => ({
+          name: p.name,
+          team: p.team,
+          is_bot: !!p.isBot,
+        })),
         team_1_score: state.scores[0],
         team_2_score: state.scores[1],
         winner_team,
         trump_suit: state.trumpSuit ?? 'CLUBS',
+        eyes: [...state.eyes] as [number, number],
         tricks: (state.roundTricks || []).map((t) => ({
           cards: t.cards.map((c) => c.id),
           winnerIndex: t.winnerIndex,
@@ -758,6 +798,33 @@ export const useGameStore = create<GameStore>((set, get) => ({
       });
     } catch (e) {
       console.warn('[persistLearningRoundIfJudge]', e);
+    }
+  },
+
+  analyzeGamesAfterMatchIfJudge: async () => {
+    const state = get();
+    if (state.phase !== 'GAME_OVER') return;
+    if (!isAiApiConfigured()) return;
+
+    const myName = (localStorage.getItem('belka_player_name') || 'Игрок').trim();
+    const firstHuman = state.players.find((p) => !p.isBot);
+    if ((firstHuman?.name ?? '').trim() !== myName) return;
+
+    const rn = state.matchRoundNumber;
+    if (rn <= 0) return;
+
+    const key = `${state.learningGameId || state.roomId || 'local'}|${rn}|${state.eyes[0]}|${state.eyes[1]}`;
+    if (lastAnalyzeGamesKey === key) return;
+    lastAnalyzeGamesKey = key;
+
+    try {
+      await postAnalyzeGames();
+      if (import.meta.env.DEV || import.meta.env.VITE_AI_DEBUG === '1') {
+        console.log('[BelkaAI] analyze-games запрошен после окончания матча');
+      }
+    } catch (e) {
+      console.warn('[analyzeGamesAfterMatchIfJudge]', e);
+      lastAnalyzeGamesKey = '';
     }
   },
 

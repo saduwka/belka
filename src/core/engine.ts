@@ -125,6 +125,18 @@ export function validateMove(card: Card, hand: Card[], table: Card[], trumpSuit:
   return { valid: true };
 }
 
+/** ID карт из руки, которыми можно легально походить в текущей позиции (для AI / бэка). */
+export function getLegalCardIds(
+  hand: Card[],
+  table: Card[],
+  trumpSuit: Suit | null,
+  playedSuits: Suit[]
+): string[] {
+  return hand
+    .filter((c) => validateMove(c, hand, table, trumpSuit, playedSuits).valid)
+    .map((c) => c.id);
+}
+
 export function sortHand(hand: Card[], trumpSuit: Suit | null): Card[] {
   return [...hand].sort((a, b) => {
     const aTrump = isTrump(a, trumpSuit);

@@ -32,6 +32,7 @@ function App() {
     spectators, takeSlot, toggleLobbyReady, startGame, isAutoPlay, toggleAutoPlay,
     isFirstRound, playedSuits,     isTurboMode, toggleTurboMode, logs, forceSync, addLog,
     persistLearningRoundIfJudge,
+    analyzeGamesAfterMatchIfJudge,
     executeBotTurn,
     aiEnabled,
     toggleAiEnabled,
@@ -119,6 +120,11 @@ function App() {
     if (lobbyView || phase !== 'ROUND_OVER') return;
     void persistLearningRoundIfJudge();
   }, [phase, lobbyView, persistLearningRoundIfJudge]);
+
+  useEffect(() => {
+    if (lobbyView || phase !== 'GAME_OVER') return;
+    void analyzeGamesAfterMatchIfJudge();
+  }, [phase, lobbyView, analyzeGamesAfterMatchIfJudge]);
 
   // Скрипт авто-игры для игрока
   useEffect(() => {

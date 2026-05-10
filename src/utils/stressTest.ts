@@ -7,8 +7,9 @@ import {
   determineTrickWinner,
   sortHand,
   validateMove,
+  getLegalCardIds,
 } from '../core/engine';
-import { fetchBotMove, getAiApiBase } from '../services/aiApi';
+import { fetchBotMove, isAiApiConfigured } from '../services/aiApi';
 
 export interface StressTestConfig {
   rounds: number; // Количество раундов (по умолчанию 100)
@@ -80,7 +81,7 @@ export class BelkaStressTester {
   }
 
   async run(): Promise<StressTestResult> {
-    const tryAi = this.config.useAiForMoves && Boolean(getAiApiBase());
+    const tryAi = this.config.useAiForMoves && isAiApiConfigured();
     const effectiveRounds =
       tryAi ? Math.min(this.config.rounds, this.config.maxRoundsWithAi) : this.config.rounds;
     if (tryAi && effectiveRounds < this.config.rounds) {
@@ -158,14 +159,21 @@ export class BelkaStressTester {
     table: Card[],
     trumpSuit: Suit,
     playedSuits: Suit[],
-    scores: [number, number]
+    scores: [number, number],
+    playerIndex: number,
+    trickLeaderIndex: number
   ): Promise<Card | null> {
-    const tryAi = this.config.useAiForMoves && Boolean(getAiApiBase());
+    const tryAi = this.config.useAiForMoves && isAiApiConfigured();
     if (tryAi) {
+      const legalIds = getLegalCardIds(hand, table, trumpSuit, playedSuits);
+      if (legalIds.length === 0) return null;
       try {
         const res = await fetchBotMove(
           {
+            playerIndex,
+            trickLeaderIndex,
             hand: hand.map((c) => c.id),
+            legalMoves: legalIds,
             table: table.map((c) => c.id),
             trumpSuit,
             playedSuits,
@@ -175,13 +183,14 @@ export class BelkaStressTester {
           { timeoutMs: this.config.aiMoveTimeoutMs }
         );
         const picked = hand.find((c) => c.id === res.card);
-        if (picked) {
+        if (picked && legalIds.includes(res.card)) {
           const v = validateMove(picked, hand, table, trumpSuit, playedSuits);
           if (v.valid) return picked;
         }
       } catch {
-        /* fallback below */
+        return null;
       }
+      return null;
     }
     return getBestBotMove(hand, table, trumpSuit, playedSuits);
   }
@@ -267,7 +276,9 @@ export class BelkaStressTester {
         table,
         trumpSuit,
         playedSuits,
-        scores
+        scores,
+        currentPlayerIndex,
+        firstPlayerInTrick
       );
 
       if (!bestCard) {

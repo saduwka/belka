@@ -17,20 +17,34 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Те же vars, что и у deploy: иначе BELKA_API_URL, заданная только в Environment github-pages, не попадёт в сборку.
+    environment:
+      name: github-pages
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
+      - name: Check BELKA_API_URL for Vite bundle
+        env:
+          API_URL: ${{ vars.BELKA_API_URL }}
+        run: |
+          if [ -z "$API_URL" ]; then
+            echo "::warning::BELKA_API_URL пустая — в проде VITE_API_URL не попадёт в бандл (только офлайн-боты). Задай переменную: Settings → Secrets and variables → Actions → Variables, либо в Environment github-pages."
+          else
+            echo "OK: BELKA_API_URL задана (длина ${#API_URL} символов)"
+          fi
       - name: Install and build
         run: |
           npm ci
           npm run build
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
-          # Optional: Repository variable BELKA_API_URL (Pi / tunnel). May be empty.
           VITE_API_URL: ${{ vars.BELKA_API_URL }}
+          # Опционально, если пути на бэке не /api/ai/bot-move и /api/ai/save-game
+          VITE_AI_BOT_MOVE_PATH: ${{ vars.BELKA_AI_BOT_MOVE_PATH }}
+          VITE_AI_SAVE_GAME_PATH: ${{ vars.BELKA_AI_SAVE_GAME_PATH }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
