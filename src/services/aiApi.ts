@@ -128,13 +128,28 @@ export function getAiAnalyzeGamesPath(): string {
 /** Стриминг Gemini по 5 партиям; даём большой таймаут. */
 const ANALYZE_GAMES_TIMEOUT_MS = 120_000
 
-/** ngrok free: без заголовка браузерный fetch иногда получает HTML-заглушку вместо JSON. */
-function apiHeaders(extra?: Record<string, string>): HeadersInit {
-  return {
+/**
+ * Заголовки для AI-fetch: без Authorization и без лишних кастомных полей.
+ * Каждый «нестандартный» заголовок на cross-origin добавляет ограничения в CORS (Allow-Headers).
+ *
+ * NB: POST + Content-Type application/json между разными origin по спецификации всё равно даёт preflight OPTIONS;
+ * убрать его полностью можно только сменив формат на text/plain или прокси same-origin — это уже контракт с бэком.
+ */
+function apiHeaders(requestUrl: string, extra?: Record<string, string>): HeadersInit {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'ngrok-skip-browser-warning': 'true',
     ...extra,
   }
+  try {
+    const host = new URL(requestUrl).hostname.toLowerCase()
+    if (host.includes('ngrok')) {
+      // Только для ngrok: иначе лишний кастомный заголовок и строже preflight для обычного API.
+      headers['ngrok-skip-browser-warning'] = 'true'
+    }
+  } catch {
+    /* ignore malformed URL */
+  }
+  return headers
 }
 
 async function fetchWithTimeout(
@@ -183,7 +198,7 @@ export async function fetchBotMove(
       url,
       {
         method: 'POST',
-        headers: apiHeaders(),
+        headers: apiHeaders(url),
         body: JSON.stringify(botMovePayload),
       },
       timeoutMs
@@ -227,11 +242,12 @@ export async function saveGameToAiBackend(body: AiSaveGameBody): Promise<void> {
     scores: payload.scores,
     playersLen: body.players.length,
   })
+  const saveUrl = joinUrl(base, getAiSaveGamePath())
   const res = await fetchWithTimeout(
-    joinUrl(base, getAiSaveGamePath()),
+    saveUrl,
     {
       method: 'POST',
-      headers: apiHeaders(),
+      headers: apiHeaders(saveUrl),
       body: JSON.stringify(payload),
     },
     DEFAULT_TIMEOUT_MS
@@ -259,7 +275,7 @@ export async function postAnalyzeGames(): Promise<void> {
       url,
       {
         method: 'POST',
-        headers: apiHeaders(),
+        headers: apiHeaders(url),
         body: JSON.stringify({}),
       },
       ANALYZE_GAMES_TIMEOUT_MS
