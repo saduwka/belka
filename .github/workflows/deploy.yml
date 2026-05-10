@@ -16,6 +16,9 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Install and Build
+        env:
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+          VITE_API_URL: ${{ vars.BELKA_API_URL || secrets.BELKA_API_URL }}
         run: |
           npm install
           npm run build

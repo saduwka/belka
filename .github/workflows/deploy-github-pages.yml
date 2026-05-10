@@ -28,12 +28,12 @@ jobs:
           cache: npm
       - name: Check BELKA_API_URL for Vite bundle
         env:
-          API_URL: ${{ vars.BELKA_API_URL }}
+          API_URL: ${{ vars.BELKA_API_URL || secrets.BELKA_API_URL }}
         run: |
           if [ -z "$API_URL" ]; then
-            echo "::warning::BELKA_API_URL пустая — в проде VITE_API_URL не попадёт в бандл (только офлайн-боты). Задай переменную: Settings → Secrets and variables → Actions → Variables, либо в Environment github-pages."
+            echo "::warning::BELKA_API_URL пустая — в бандл не попадёт VITE_API_URL, запросы к бэку не пойдут. Задай Repository variable или Secret BELKA_API_URL (https://… без слеша в конце). Environment: github-pages."
           else
-            echo "OK: BELKA_API_URL задана (длина ${#API_URL} символов)"
+            echo "OK: API URL задан (длина ${#API_URL} символов)"
           fi
       - name: Install and build
         run: |
@@ -41,7 +41,8 @@ jobs:
           npm run build
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/
-          VITE_API_URL: ${{ vars.BELKA_API_URL }}
+          # Variable имеет приоритет; если пусто — secret (удобно, если URL не хотите светить в vars)
+          VITE_API_URL: ${{ vars.BELKA_API_URL || secrets.BELKA_API_URL }}
           # Опционально, если пути на бэке не /api/ai/bot-move и /api/ai/save-game
           VITE_AI_BOT_MOVE_PATH: ${{ vars.BELKA_AI_BOT_MOVE_PATH }}
           VITE_AI_SAVE_GAME_PATH: ${{ vars.BELKA_AI_SAVE_GAME_PATH }}

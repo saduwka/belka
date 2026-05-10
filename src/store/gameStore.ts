@@ -700,14 +700,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
 
     const tryAi = state.aiEnabled && isAiApiConfigured();
-    aiLog('tryAi=', tryAi, 'aiEnabled=', state.aiEnabled, 'api=', getAiApiBase() || '(proxy /api)');
+    aiLog('tryAi=', tryAi, 'aiEnabled=', state.aiEnabled, 'api=', getAiApiBase() || '(нет VITE_API_URL)');
 
-    if (!tryAi) {
-      aiLog(
-        'skip: ход бота только через AI — включи AI и VITE_API_URL (или dev-прокси)'
-      );
-      return;
-    }
+    const playEngineMove = () => {
+      const st = get();
+      if (st.currentPlayerIndex !== playerIndex || st.phase !== 'PLAYING') return;
+      const p = st.players[playerIndex];
+      const h = p?.hand || [];
+      const legal = getLegalCardIds(h, st.table, st.trumpSuit, st.playedSuits || []);
+      if (legal.length === 0) {
+        get().addLog('🤖 Бот: нет легальных ходов');
+        return;
+      }
+      const best = getBestBotMove(h, st.table, st.trumpSuit, st.playedSuits || []);
+      if (best && legal.includes(best.id)) {
+        get().playCard(playerIndex, best.id);
+        aiLog('playCard engine', best.id);
+      }
+    };
 
     const legalIds = getLegalCardIds(
       hand,
@@ -718,6 +728,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (legalIds.length === 0) {
       aiLog('нет легальных ходов');
       get().addLog('🤖 Бот: нет легальных ходов');
+      return;
+    }
+
+    if (!tryAi) {
+      aiLog('бэк не настроен в сборке или AI выключен — ход движком (GitHub Pages без VITE_API_URL)');
+      playEngineMove();
       return;
     }
 
@@ -746,16 +762,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
         get().playCard(playerIndex, res.card);
         aiLog('playCard AI ok', res.card);
       } else if (picked) {
-        get().addLog(`🤖 AI вернул недопустимую карту ${res.card} — ход отменён`);
+        get().addLog(`🤖 AI вернул недопустимую карту — ход движком`);
         aiLog('карта не из legalMoves', res.card);
+        playEngineMove();
       } else {
-        get().addLog(`🤖 AI вернул карту не из руки: ${res.card}`);
+        get().addLog(`🤖 AI вернул карту не из руки — ход движком`);
         aiLog('AI вернул карту не из руки', res.card, 'рука', hand.map((c) => c.id));
+        playEngineMove();
       }
     } catch (e) {
       console.warn('[executeBotTurn] AI failed', e);
       aiLog('исключение fetch', e);
-      get().addLog('🤖 Ошибка запроса к AI — ход бота не сделан');
+      get().addLog('🤖 Ошибка запроса к AI — ход движком');
+      playEngineMove();
     } finally {
       set({ aiThinking: false });
     }
