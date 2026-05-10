@@ -7,6 +7,13 @@ import { fetchBotMove, getAiApiBase, isAiApiConfigured, postAnalyzeGames, saveGa
 
 let lastPersistedLearningRound = -1;
 
+/** Одноразовое пояснение в addLog (прод без VITE_AI_DEBUG почти не пишет [BelkaAI] в консоль). */
+let warnedAiFallbackLogged = false;
+
+function resetAiFallbackWarn() {
+  warnedAiFallbackLogged = false;
+}
+
 function resetLearningPersistence() {
   lastPersistedLearningRound = -1;
 }
@@ -319,6 +326,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         { id: 3, name: 'Бот 3', hand: sortHand(hands[3], 'CLUBS'), team: 1, isBot: true },
       ];
       resetLearningPersistence();
+      resetAiFallbackWarn();
       const learningGameId = `local-${Date.now()}`;
       set({
         players,
@@ -733,6 +741,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     if (!tryAi) {
       aiLog('бэк не настроен в сборке или AI выключен — ход движком (GitHub Pages без VITE_API_URL)');
+      if (!warnedAiFallbackLogged) {
+        warnedAiFallbackLogged = true;
+        if (!state.aiEnabled) {
+          get().addLog(
+            '🤖 Запросов к AI нет: нейроботы выключены (иконка в меню) — работает локальная логика.'
+          );
+        } else {
+          get().addLog(
+            '🤖 Запросов к AI нет: в бандле пустой VITE_API_URL — задай BELKA_API_URL в GitHub Actions при сборке и передеплой; сейчас бот ходит локальным движком. В консоли нет [BelkaAI]: в CI добавь VITE_AI_DEBUG=1 для отладки.'
+          );
+        }
+      }
       playEngineMove();
       return;
     }
@@ -960,6 +980,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       (window as any)._belkaWatchdog = null;
     }
     resetLearningPersistence();
+    resetAiFallbackWarn();
     set({
       phase: 'LOBBY',
       roomId: null,

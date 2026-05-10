@@ -46,6 +46,7 @@ jobs:
           # Опционально, если пути на бэке не /api/ai/bot-move и /api/ai/save-game
           VITE_AI_BOT_MOVE_PATH: ${{ vars.BELKA_AI_BOT_MOVE_PATH }}
           VITE_AI_SAVE_GAME_PATH: ${{ vars.BELKA_AI_SAVE_GAME_PATH }}
+          VITE_AI_DEBUG: ${{ vars.VITE_AI_DEBUG }}
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
