@@ -16,14 +16,15 @@
 - **Micro-animations**: Use Tailwind transitions and custom keyframes (like `animate-deal`, `animate-play`) for every interaction.
 
 ## 3. Core Gameplay Logic (Source of Truth)
-- **Trump Assignment**: The player with the **Jack of Clubs** (Валет Треф) starts the round and their assigned suit becomes the trump.
+- **Trump Assignment**: The player with the **Jack of Clubs** (Валет Треф) fixes the trump suit mapping for the match; **the first lead** in each deal goes to the player **to the dealer’s left** (turn order 0→1→2→3; dealer rotates each round).
 - **Persistent Mapping**: Suits are mapped to players in the first round (Clubs -> Hearts -> Spades -> Diamonds circular order).
 - **Eggs (Яйца)**:
     - 60:60 score triggers "Eggs" (+2 eyes accumulated).
     - Next winners vote: "Take accumulated eyes" or "Hang them further".
     - Tie-break vote: Randomizer if teammates disagree.
 - **Spas (Спас)**: 31+ points for the losing team prevents the winner from gaining an extra eye.
-- **First Round**: Always worth 2 eyes, no Spas check.
+- **First Round**: Always worth 2 eyes (no Спас counting for extra eye), unless **Шапан (120)** ends the match.
+- **Шапан (120)**: Winner of the deal takes **all 12 eyes at once** and the **match ends** → game-over screen, new game from lobby.
 - **Scoring**: Scores must update only AFTER the card collection animation (3s delay).
 
 ## 4. Operational Rules

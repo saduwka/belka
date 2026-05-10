@@ -58,7 +58,10 @@ export interface GameState {
   firstPlayerInTrick: number;
   isFirstRound: boolean;
   lastTrickWinnerIndex: number | null;
+  /** Масти, где в текущей раздаче уже ложили карту (заход или ответ на взятку). */
   playedSuits: Suit[];
+  /** Раздающий; очередность хода 0→1→2→3, первым ходит сидящий слева: (dealerIndex+1)%4. */
+  dealerIndex: number;
   trumpMapping?: Record<number, Suit>;
   eggsCount: number;
   votingState?: {

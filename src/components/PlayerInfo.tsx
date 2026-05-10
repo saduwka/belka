@@ -75,9 +75,11 @@ interface PlayerInfoProps {
   position: 'bottom' | 'top' | 'left' | 'right';
   isAdmin?: boolean;
   afkTimer?: number | null;
+  /** Текущий раздающий в партии */
+  isDealer?: boolean;
 }
 
-export const PlayerInfo = ({ name, relation, active, cardsCount, assignedSuit, position, isAdmin, afkTimer }: PlayerInfoProps) => {
+export const PlayerInfo = ({ name, relation, active, cardsCount, assignedSuit, position, isAdmin, afkTimer, isDealer }: PlayerInfoProps) => {
   const isMe = relation === 'ME';
   const bgColor = (relation === 'PARTNER' || relation === 'TEAM_A' || isMe) 
     ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' 
@@ -99,6 +101,15 @@ export const PlayerInfo = ({ name, relation, active, cardsCount, assignedSuit, p
       {assignedSuit && (
         <div className="absolute -top-1 -left-1 bg-white w-5 h-5 sm:w-7 sm:h-7 rounded-full border-2 border-slate-900 flex items-center justify-center text-[10px] sm:text-sm shadow-md z-30">
           {getSuitSymbol(assignedSuit)}
+        </div>
+      )}
+
+      {isDealer && (
+        <div
+          className="absolute -top-1 -right-1 z-30 min-w-[18px] h-5 sm:h-6 sm:min-w-[22px] px-1 rounded-full border border-white/20 bg-blue-500/30 backdrop-blur-md flex items-center justify-center text-[7px] sm:text-[8px] font-black uppercase tracking-tighter text-blue-200 shadow-md"
+          title="Раздающий"
+        >
+          Р
         </div>
       )}
 

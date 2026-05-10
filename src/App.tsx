@@ -30,9 +30,8 @@ function App() {
     initGame, playCard, resetRound, isMultiplayer, myPlayerIndex, roomId, trumpMapping,
     eggsCount, votingState, submitVote, readyPlayers, roundEndTime, setReady,
     spectators, takeSlot, toggleLobbyReady, startGame, isAutoPlay, toggleAutoPlay,
-    isFirstRound, playedSuits,     isTurboMode, toggleTurboMode, logs, forceSync, addLog,
+    isFirstRound, playedSuits, dealerIndex, isTurboMode, toggleTurboMode, logs, forceSync, addLog,
     persistLearningRoundIfJudge,
-    analyzeGamesAfterMatchIfJudge,
     executeBotTurn,
     aiEnabled,
     toggleAiEnabled,
@@ -117,14 +116,9 @@ function App() {
   }, [phase, currentPlayerIndex, table.length, players, trumpSuit, playedSuits, forceSync, playCard, resetRound, addLog, lobbyView, executeBotTurn]);
 
   useEffect(() => {
-    if (lobbyView || phase !== 'ROUND_OVER') return;
+    if (lobbyView || (phase !== 'ROUND_OVER' && phase !== 'GAME_OVER')) return;
     void persistLearningRoundIfJudge();
   }, [phase, lobbyView, persistLearningRoundIfJudge]);
-
-  useEffect(() => {
-    if (lobbyView || phase !== 'GAME_OVER') return;
-    void analyzeGamesAfterMatchIfJudge();
-  }, [phase, lobbyView, analyzeGamesAfterMatchIfJudge]);
 
   // Скрипт авто-игры для игрока
   useEffect(() => {
@@ -328,6 +322,8 @@ function App() {
   // Не показываем масти игроков в первом раунде, пока не вышел валет крести
   const hasJackAppeared = table.some(c => c.id === 'CLUBS_JACK');
   const showMapping = !isFirstRound || hasJackAppeared;
+  const showDealerBadge =
+    phase === 'PLAYING' || phase === 'ROUND_OVER' || phase === 'GAME_OVER';
 
   return (
     <div className={`h-[100dvh] bg-[#020617] flex flex-col overflow-hidden font-sans select-none relative text-white touch-none ${isTurboMode ? 'turbo-active' : ''}`}>
@@ -411,6 +407,7 @@ function App() {
                 position={positions[offset]}
                 isAdmin={players[idx]?.name.toLowerCase() === 'sadu'}
                 afkTimer={currentPlayerIndex === idx ? afkTimer : null}
+                isDealer={showDealerBadge && dealerIndex === idx}
               />
               {myPlayerIndex === -1 && players[idx]?.isBot && (
                 <button 
@@ -440,6 +437,13 @@ function App() {
       </div>
 
       <div className="relative pb-16 flex flex-col items-center">
+        {myPlayerIndex !== -1 && showDealerBadge && dealerIndex === myPlayerIndex && (
+          <div className="absolute -top-14 left-1/2 -translate-x-1/2 z-50">
+            <div className="bg-blue-500/20 text-blue-300 border border-blue-500/40 backdrop-blur-xl px-3 py-1 rounded-full font-black text-[8px] sm:text-[9px] uppercase tracking-widest shadow-lg">
+              ВЫ РАЗДАЁТЕ
+            </div>
+          </div>
+        )}
         {isMyTurn && (
           <div className="absolute -top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 z-50">
             <div className="bg-yellow-400 text-yellow-950 px-4 py-1 rounded-full font-black text-[10px] uppercase tracking-widest animate-bounce shadow-xl">

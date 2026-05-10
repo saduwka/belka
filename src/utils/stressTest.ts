@@ -8,6 +8,7 @@ import {
   sortHand,
   validateMove,
   getLegalCardIds,
+  getFirstPlayerIndexLeftOfDealer,
 } from '../core/engine';
 import { fetchBotMove, isAiApiConfigured } from '../services/aiApi';
 
@@ -199,11 +200,7 @@ export class BelkaStressTester {
     const deck = shuffleDeck(createDeck());
     const hands = dealCards(deck);
 
-    // Определяем стартера (у кого валет треф)
-    let starterIndex = 0;
-    hands.forEach((hand, idx) => {
-      if (hand.some(c => c.id === 'CLUBS_JACK')) starterIndex = idx;
-    });
+    const firstPlayerIndex = getFirstPlayerIndexLeftOfDealer(0);
 
     const trumpSuit = 'CLUBS';
     const players: Player[] = hands.map((hand, i) => ({
@@ -214,10 +211,10 @@ export class BelkaStressTester {
       isBot: true,
     }));
 
-    let currentPlayerIndex = starterIndex;
+    let currentPlayerIndex = firstPlayerIndex;
     let table: Card[] = [];
     let scores: [number, number] = [0, 0];
-    let firstPlayerInTrick = starterIndex;
+    let firstPlayerInTrick = firstPlayerIndex;
     let playedSuits: Suit[] = [];
     let trickCount = 0;
 
@@ -304,8 +301,7 @@ export class BelkaStressTester {
       currentPlayer.hand = currentPlayer.hand.filter(c => c.id !== bestCard.id);
       table.push(bestCard);
 
-      // Трекаем масти (только первая карта взятки)
-      if (table.length === 1 && !playedSuits.includes(bestCard.suit)) {
+      if (!playedSuits.includes(bestCard.suit)) {
         playedSuits.push(bestCard.suit);
       }
 

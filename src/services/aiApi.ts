@@ -163,7 +163,14 @@ export async function fetchBotMove(
   const base = getAiApiBase()
   const url = joinUrl(base, getAiBotMovePath())
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const botMovePayload = {
+    ...body,
+    player_index: body.playerIndex,
+    trick_leader_index: body.trickLeaderIndex,
+  }
   aiLog('POST', url, {
+    playerIndex: body.playerIndex,
+    trickLeaderIndex: body.trickLeaderIndex,
     hand: body.hand.length,
     legal: body.legalMoves.length,
     table: body.table.length,
@@ -177,7 +184,7 @@ export async function fetchBotMove(
       {
         method: 'POST',
         headers: apiHeaders(),
-        body: JSON.stringify(body),
+        body: JSON.stringify(botMovePayload),
       },
       timeoutMs
     )

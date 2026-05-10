@@ -1,18 +1,14 @@
 import { create } from 'zustand';
 import { GameState, Suit, Player, CARD_POINTS, RoundTrickRecord } from '../core/types';
-import { createDeck, shuffleDeck, dealCards, determineTrickWinner, validateMove, sortHand, getBestBotMove, getLegalCardIds } from '../core/engine';
+import { createDeck, shuffleDeck, dealCards, determineTrickWinner, validateMove, sortHand, getBestBotMove, getLegalCardIds, findJackHolderIndex, getFirstPlayerIndexLeftOfDealer, computeRoundEndEyesOutcome } from '../core/engine';
 import { db } from '../firebase';
 import { ref, update as firebaseUpdate, onValue, set as firebaseDbSet } from 'firebase/database';
 import { fetchBotMove, getAiApiBase, isAiApiConfigured, postAnalyzeGames, saveGameToAiBackend } from '../services/aiApi';
 
 let lastPersistedLearningRound = -1;
 
-/** Дедуп повторных вызовов analyze-games за одно и то же окончание матча. */
-let lastAnalyzeGamesKey = '';
-
 function resetLearningPersistence() {
   lastPersistedLearningRound = -1;
-  lastAnalyzeGamesKey = '';
 }
 
 function readAiEnabled(): boolean {
@@ -51,8 +47,8 @@ interface GameStore extends GameState {
   aiThinking: boolean;
   toggleAiEnabled: () => void;
   executeBotTurn: (playerIndex: number) => Promise<void>;
+  /** Сохранить раздачу в AI-бэк и дернуть самообучение (analyze-games). Судья: первый живой игрок. */
   persistLearningRoundIfJudge: () => Promise<void>;
-  analyzeGamesAfterMatchIfJudge: () => Promise<void>;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -68,6 +64,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   isFirstRound: true,
   lastTrickWinnerIndex: null,
   playedSuits: [],
+  dealerIndex: 0,
   lastError: null,
   isMultiplayer: false,
   roomId: null,
@@ -186,6 +183,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
             roundTricks: remoteState.roundTricks || [],
             matchRoundNumber: typeof remoteState.matchRoundNumber === 'number' ? remoteState.matchRoundNumber : 0,
             learningGameId: typeof remoteState.learningGameId === 'string' ? remoteState.learningGameId : roomId || '',
+            dealerIndex: typeof remoteState.dealerIndex === 'number' ? remoteState.dealerIndex : 0,
           };
           if (normalizedState.readyPlayers._init) {
              normalizedState.readyPlayers = {};
@@ -289,6 +287,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           roundTricks: [],
           matchRoundNumber: 0,
           learningGameId: roomId,
+          dealerIndex: 0,
         });
       } else {
         // Добавляем в зрители только если игрока реально нет в слотах
@@ -307,11 +306,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
       // Одиночная игра
       const deck = shuffleDeck(createDeck());
       const hands = dealCards(deck);
-      let starterIndex = 0;
-      hands.forEach((hand, idx) => { if (hand.some(c => c.id === 'CLUBS_JACK')) starterIndex = idx; });
+      const dealerIdx = 0;
+      const jackHolderIndex = findJackHolderIndex(hands);
+      const firstPlayerIndex = getFirstPlayerIndexLeftOfDealer(dealerIdx);
       const suitOrder: Suit[] = ['CLUBS', 'HEARTS', 'SPADES', 'DIAMONDS'];
       const mapping: Record<number, Suit> = {};
-      for (let i = 0; i < 4; i++) mapping[(starterIndex + i) % 4] = suitOrder[i];
+      for (let i = 0; i < 4; i++) mapping[(jackHolderIndex + i) % 4] = suitOrder[i];
       const players: Player[] = [
         { id: 0, name: cleanName, hand: sortHand(hands[0], 'CLUBS'), team: 0, isBot: false },
         { id: 1, name: 'Бот 1', hand: sortHand(hands[1], 'CLUBS'), team: 1, isBot: true },
@@ -322,10 +322,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const learningGameId = `local-${Date.now()}`;
       set({
         players,
-        currentPlayerIndex: starterIndex,
-        firstPlayerInTrick: starterIndex,
+        dealerIndex: dealerIdx,
+        currentPlayerIndex: firstPlayerIndex,
+        firstPlayerInTrick: firstPlayerIndex,
         trumpSuit: 'CLUBS',
-        trumpSetterTeam: starterIndex % 2 === 0 ? 0 : 1,
+        trumpSetterTeam: jackHolderIndex % 2 === 0 ? 0 : 1,
         phase: 'PLAYING',
         table: [],
         scores: [0, 0],
@@ -346,10 +347,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       });
 
       // Если в одиночной игре первый ход у бота — запускаем его
-      if (starterIndex !== 0) {
+      if (firstPlayerIndex !== 0) {
         const delay = get().isTurboMode ? 0 : 1000;
         setTimeout(() => {
-          void get().executeBotTurn(starterIndex);
+          void get().executeBotTurn(firstPlayerIndex);
         }, delay);
       }
     }
@@ -393,19 +394,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     const deck = shuffleDeck(createDeck());
     const hands = dealCards(deck);
-    let starterIndex = 0;
-    hands.forEach((hand, idx) => { if (hand.some(c => c.id === 'CLUBS_JACK')) starterIndex = idx; });
+    const dealerIdx = 0;
+    const jackHolderIndex = findJackHolderIndex(hands);
+    const firstPlayerIndex = getFirstPlayerIndexLeftOfDealer(dealerIdx);
     const suitOrder: Suit[] = ['CLUBS', 'HEARTS', 'SPADES', 'DIAMONDS'];
     const mapping: Record<number, Suit> = {};
-    for (let i = 0; i < 4; i++) mapping[(starterIndex + i) % 4] = suitOrder[i];
+    for (let i = 0; i < 4; i++) mapping[(jackHolderIndex + i) % 4] = suitOrder[i];
     const finalPlayers = state.players.map((p, i) => ({ ...p, hand: sortHand(hands[i], 'CLUBS') }));
     firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), {
       players: finalPlayers,
       phase: 'PLAYING',
-      currentPlayerIndex: starterIndex,
-      firstPlayerInTrick: starterIndex,
+      dealerIndex: dealerIdx,
+      currentPlayerIndex: firstPlayerIndex,
+      firstPlayerInTrick: firstPlayerIndex,
       trumpSuit: 'CLUBS',
-      trumpSetterTeam: starterIndex % 2 === 0 ? 0 : 1,
+      trumpSetterTeam: jackHolderIndex % 2 === 0 ? 0 : 1,
       trumpMapping: mapping,
       readyPlayers: { _init: true },
       roundTricks: [],
@@ -436,7 +439,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     newPlayers[playerIndex] = { ...player, hand: newHand };
     const newTable = [...state.table, card];
     const newPlayedSuits = [...state.playedSuits];
-    if (newTable.length === 1 && !newPlayedSuits.includes(card.suit)) newPlayedSuits.push(card.suit);
+    if (!newPlayedSuits.includes(card.suit)) newPlayedSuits.push(card.suit);
     let nextState: Partial<GameState> = { players: newPlayers, table: newTable, playedSuits: newPlayedSuits };
     if (newTable.length === 4) {
       const firstCard = newTable[0];
@@ -499,31 +502,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
               matchRoundNumber: prevMatchRound + 1,
             };
           } else {
-            const wTeam = team0Points > team1Points ? 0 : 1;
+            const wTeam = (team0Points > team1Points ? 0 : 1) as 0 | 1;
             const loserPoints = wTeam === 0 ? team1Points : team0Points;
             const winnerPoints = wTeam === 0 ? team0Points : team1Points;
-            
-            let eyesToAward = 1;
 
-            if (currentState.isFirstRound) {
-              // В первой раздаче всегда 2 глаза, если это не Шапан
-              eyesToAward = winnerPoints === 120 ? 4 : 2;
-            } else {
-              // В обычных раундах: 1 за победу, 2 за голых (< 31), 4 за Шапан
-              if (winnerPoints === 120) eyesToAward = 4;
-              else if (loserPoints < 31) eyesToAward = 2;
-              else eyesToAward = 1;
+            const eyeOutcome = computeRoundEndEyesOutcome(
+              currentEyes as [number, number],
+              currentEggs,
+              wTeam,
+              loserPoints,
+              winnerPoints,
+              currentState.isFirstRound
+            );
+            if (winnerPoints === 120) {
+              get().addLog('Шапан 120 — победитель сразу 12 глаз, матч окончен');
             }
-            
-            // Добавляем накопленные яйца
-            let eyesTotal = eyesToAward + currentEggs;
-            currentEyes[wTeam] = Math.min(12, currentEyes[wTeam] + eyesTotal);
-            
+
             finalUpdate = {
               ...finalUpdate,
-              eyes: currentEyes as [number, number],
-              eggsCount: 0,
-              phase: currentEyes[wTeam] >= 12 ? 'GAME_OVER' : 'ROUND_OVER',
+              eyes: eyeOutcome.eyes,
+              eggsCount: eyeOutcome.eggsCount,
+              phase: eyeOutcome.phase,
               isFirstRound: false,
               readyPlayers: { _init: true },
               roundEndTime: null as unknown as number,
@@ -634,22 +633,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const deck = shuffleDeck(createDeck());
     const hands = dealCards(deck);
-    let starterIndex = 0;
-    hands.forEach((hand, idx) => { if (hand.some(c => c.id === 'CLUBS_JACK')) starterIndex = idx; });
-    const nextTrumpSuit = state.trumpMapping ? state.trumpMapping[starterIndex] : 'CLUBS';
+    const jackHolderIndex = findJackHolderIndex(hands);
+    const nextDealerIndex = (state.dealerIndex + 1) % 4;
+    const firstPlayerIndex = getFirstPlayerIndexLeftOfDealer(nextDealerIndex);
+    const nextTrumpSuit = state.trumpMapping ? state.trumpMapping[jackHolderIndex] : 'CLUBS';
     const newPlayers = state.players.map((p, i) => ({ ...p, hand: sortHand(hands[i], nextTrumpSuit) }));
     const nextState: Partial<GameState> = {
       players: newPlayers,
+      dealerIndex: nextDealerIndex,
       table: [],
       scores: [0, 0],
       phase: 'PLAYING',
-      currentPlayerIndex: starterIndex,
-      firstPlayerInTrick: starterIndex,
+      currentPlayerIndex: firstPlayerIndex,
+      firstPlayerInTrick: firstPlayerIndex,
       lastTrickWinnerIndex: null, // Фикс #2: обнуляем только здесь — при старте нового раунда
       playedSuits: [],
       lastError: null,
       trumpSuit: nextTrumpSuit,
-      trumpSetterTeam: starterIndex % 2 === 0 ? 0 : 1,
+      trumpSetterTeam: jackHolderIndex % 2 === 0 ? 0 : 1,
       votingState: null as unknown as GameState['votingState'],
       readyPlayers: { _init: true }, // Используем заглушку, чтобы Firebase не удалял пустой объект
       roundEndTime: null as unknown as number,
@@ -659,10 +660,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       firebaseUpdate(ref(db, `rooms/${state.roomId}/state`), nextState);
     } else if (!state.isMultiplayer) {
       set({ ...nextState, readyPlayers: {} });
-      if (starterIndex !== 0) {
+      if (firstPlayerIndex !== 0) {
         const delay = state.isTurboMode ? 0 : 1000;
         setTimeout(() => {
-          void get().executeBotTurn(starterIndex);
+          void get().executeBotTurn(firstPlayerIndex);
         }, delay);
       }
     }
@@ -762,7 +763,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   persistLearningRoundIfJudge: async () => {
     const state = get();
-    if (state.phase !== 'ROUND_OVER') return;
+    if (state.phase !== 'ROUND_OVER' && state.phase !== 'GAME_OVER') return;
     if (!isAiApiConfigured()) return;
     const myName = (localStorage.getItem('belka_player_name') || 'Игрок').trim();
     const firstHuman = state.players.find((p) => !p.isBot);
@@ -770,7 +771,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     const rn = state.matchRoundNumber;
     if (rn === lastPersistedLearningRound || rn <= 0) return;
-    lastPersistedLearningRound = rn;
 
     let winner_team: 0 | 1 = 0;
     if (state.scores[1] > state.scores[0]) winner_team = 1;
@@ -796,35 +796,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
           winnerIndex: t.winnerIndex,
         })),
       });
-    } catch (e) {
-      console.warn('[persistLearningRoundIfJudge]', e);
-    }
-  },
-
-  analyzeGamesAfterMatchIfJudge: async () => {
-    const state = get();
-    if (state.phase !== 'GAME_OVER') return;
-    if (!isAiApiConfigured()) return;
-
-    const myName = (localStorage.getItem('belka_player_name') || 'Игрок').trim();
-    const firstHuman = state.players.find((p) => !p.isBot);
-    if ((firstHuman?.name ?? '').trim() !== myName) return;
-
-    const rn = state.matchRoundNumber;
-    if (rn <= 0) return;
-
-    const key = `${state.learningGameId || state.roomId || 'local'}|${rn}|${state.eyes[0]}|${state.eyes[1]}`;
-    if (lastAnalyzeGamesKey === key) return;
-    lastAnalyzeGamesKey = key;
-
-    try {
-      await postAnalyzeGames();
+      // Эндпоинт может выполняться долго — не блокируем UI
+      void postAnalyzeGames().catch((e) =>
+        console.warn('[persistLearningRoundIfJudge] analyze-games', e)
+      );
       if (import.meta.env.DEV || import.meta.env.VITE_AI_DEBUG === '1') {
-        console.log('[BelkaAI] analyze-games запрошен после окончания матча');
+        console.log('[BelkaAI] save-game ок, analyze-games отправлен', { round: rn, phase: state.phase });
       }
+      lastPersistedLearningRound = rn;
     } catch (e) {
-      console.warn('[analyzeGamesAfterMatchIfJudge]', e);
-      lastAnalyzeGamesKey = '';
+      console.warn('[persistLearningRoundIfJudge] save-game', e);
     }
   },
 
@@ -862,23 +843,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
         };
       }
 
-      const wTeam = team0Points > team1Points ? 0 : 1;
+      const wTeam = (team0Points > team1Points ? 0 : 1) as 0 | 1;
       const loserPoints = wTeam === 0 ? team1Points : team0Points;
       const winnerPoints = wTeam === 0 ? team0Points : team1Points;
-      let eyesToAward = 1;
-      if (state.isFirstRound) {
-        eyesToAward = winnerPoints === 120 ? 4 : 2;
-      } else {
-        if (winnerPoints === 120) eyesToAward = 4;
-        else if (loserPoints < 31) eyesToAward = 2;
-        else eyesToAward = 1;
-      }
-      currentEyes[wTeam] = Math.min(12, currentEyes[wTeam] + eyesToAward + currentEggs);
+      const eyeOutcome = computeRoundEndEyesOutcome(
+        currentEyes,
+        currentEggs,
+        wTeam,
+        loserPoints,
+        winnerPoints,
+        state.isFirstRound
+      );
       return {
         scores,
-        eyes: currentEyes,
-        eggsCount: 0,
-        phase: currentEyes[wTeam] >= 12 ? 'GAME_OVER' : 'ROUND_OVER',
+        eyes: eyeOutcome.eyes,
+        eggsCount: eyeOutcome.eggsCount,
+        phase: eyeOutcome.phase,
         isFirstRound: false,
         readyPlayers: { _init: true } as GameState['readyPlayers'],
         roundEndTime: null as unknown as number,
@@ -972,6 +952,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       matchRoundNumber: 0,
       learningGameId: '',
       aiThinking: false,
+      dealerIndex: 0,
     });
   }
 }));

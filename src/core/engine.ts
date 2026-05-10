@@ -23,6 +23,20 @@ export function shuffleDeck(deck: Card[]): Card[] {
   return shuffled;
 }
 
+/** У кого в руке валет треф — задаёт козырную мапу на игроков. */
+export function findJackHolderIndex(hands: Card[][]): number {
+  let idx = 0;
+  hands.forEach((hand, i) => {
+    if (hand.some((c) => c.id === 'CLUBS_JACK')) idx = i;
+  });
+  return idx;
+}
+
+/** Первый ход в раунде: игрок слева от раздающего (порядок за столом 0→1→2→3). */
+export function getFirstPlayerIndexLeftOfDealer(dealerIndex: number): number {
+  return (dealerIndex + 1) % 4;
+}
+
 export function dealCards(deck: Card[]): Card[][] {
   const hands: Card[][] = [[], [], [], []];
   let cardIndex = 0;
@@ -100,7 +114,7 @@ export function validateMove(card: Card, hand: Card[], table: Card[], trumpSuit:
     }
   }
 
-  // 3. Ace discard rule (слив голого туза)
+  // 3. Слив туза с «чужой» масти: нельзя, пока эта масть ещё не выходила в раздаче
   const playingTrump = isTrump(card, trumpSuit);
   const followingSuit = !isFirstCardTrump && card.suit === leadSuit && !playingTrump;
   
@@ -123,6 +137,42 @@ export function validateMove(card: Card, hand: Card[], table: Card[], trumpSuit:
   }
 
   return { valid: true };
+}
+
+export type RoundEndPhase = 'ROUND_OVER' | 'GAME_OVER';
+
+/**
+ * Конец раздачи (не ничья 60:60): сколько глаз у победителя и переход фазы.
+ * Шапан — 120 очков в этой раздаче: победитель сразу получает 12 глаз и матч заканчивается.
+ */
+export function computeRoundEndEyesOutcome(
+  eyes: readonly [number, number],
+  eggsCount: number,
+  winnerTeam: 0 | 1,
+  loserPoints: number,
+  winnerPoints: number,
+  isFirstRound: boolean
+): { eyes: [number, number]; eggsCount: number; phase: RoundEndPhase } {
+  const next: [number, number] = [eyes[0], eyes[1]];
+
+  if (winnerPoints === 120) {
+    next[winnerTeam] = 12;
+    return { eyes: next, eggsCount: 0, phase: 'GAME_OVER' };
+  }
+
+  let eyesToAward = 1;
+  if (isFirstRound) {
+    eyesToAward = 2;
+  } else {
+    if (loserPoints < 31) eyesToAward = 2;
+  }
+  const eyesTotal = eyesToAward + eggsCount;
+  next[winnerTeam] = Math.min(12, next[winnerTeam] + eyesTotal);
+  return {
+    eyes: next,
+    eggsCount: 0,
+    phase: next[winnerTeam] >= 12 ? 'GAME_OVER' : 'ROUND_OVER',
+  };
 }
 
 /** ID карт из руки, которыми можно легально походить в текущей позиции (для AI / бэка). */

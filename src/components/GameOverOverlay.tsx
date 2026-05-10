@@ -1,4 +1,3 @@
-import { GameState } from '../core/types';
 import { BelkaScore } from './BelkaScore';
 
 interface GameOverOverlayProps {
@@ -53,8 +52,11 @@ export const GameOverOverlay = ({
           onClick={onLeave} 
           className="w-full py-5 rounded-3xl font-black uppercase tracking-[0.2em] transition-all bg-white text-black shadow-[0_10px_40px_rgba(255,255,255,0.2)] active:scale-95 hover:bg-slate-200"
         >
-          ВЕРНУТЬСЯ В ЛОББИ
+          НОВАЯ ИГРА
         </button>
+        <p className="mt-4 text-[9px] font-bold uppercase tracking-widest text-white/35">
+          Вернуться в лобби и начать партии заново
+        </p>
       </div>
     </div>
   );
