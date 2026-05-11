@@ -114,7 +114,7 @@ export function validateMove(card: Card, hand: Card[], table: Card[], trumpSuit:
     }
   }
 
-  // 3. Слив туза с «чужой» масти: нельзя, пока эта масть ещё не выходила в раздаче
+  // 3. Слив туза с «чужой» масти: нельзя, пока с этой масти ещё не ДЕЛАЛИ ХОД (не была ведущей в круге)
   const playingTrump = isTrump(card, trumpSuit);
   const followingSuit = !isFirstCardTrump && card.suit === leadSuit && !playingTrump;
   

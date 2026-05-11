@@ -499,7 +499,10 @@ export const useGameStore = create<GameStore>((set, get) => {
     newPlayers[playerIndex] = { ...player, hand: newHand };
     const newTable = [...state.table, card];
     const newPlayedSuits = [...state.playedSuits];
-    if (!newPlayedSuits.includes(card.suit)) newPlayedSuits.push(card.suit);
+    // Масть считается сыгранной только если с неё СДЕЛАЛИ ХОД (она первая на столе)
+    if (state.table.length === 0 && !newPlayedSuits.includes(card.suit)) {
+      newPlayedSuits.push(card.suit);
+    }
     let nextState: Partial<GameState> = { players: newPlayers, table: newTable, playedSuits: newPlayedSuits };
     if (newTable.length === 4) {
       const firstCard = newTable[0];

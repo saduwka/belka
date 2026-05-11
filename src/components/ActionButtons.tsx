@@ -1,3 +1,6 @@
+import React, { useState } from 'react';
+import { ChevronUp, ChevronDown } from 'lucide-react';
+
 interface ActionButtonsProps {
   isMultiplayer: boolean;
   aiEnabled: boolean;
@@ -12,8 +15,11 @@ interface ActionButtonsProps {
 }
 
 export const ActionButtons = ({ isMultiplayer, aiEnabled, onAiToggle, isAutoPlay, onAutoPlayToggle, isTurboMode, onTurboToggle, onReset, onMenu, isAdmin }: ActionButtonsProps) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   return (
-    <div className="absolute bottom-6 right-4 z-[500] flex flex-col gap-3 items-end">
+    <div className={`absolute bottom-6 right-4 z-[500] flex flex-col items-end transition-all duration-300 ${isExpanded ? 'gap-3' : 'gap-0'}`}>
+      <div className={`flex flex-col gap-3 items-end transition-all duration-300 origin-bottom ${isExpanded ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-10 scale-90 pointer-events-none h-0 overflow-hidden'}`}>
       <button 
         type="button"
         onClick={onAiToggle} 
@@ -55,6 +61,19 @@ export const ActionButtons = ({ isMultiplayer, aiEnabled, onAiToggle, isAutoPlay
         title="Меню"
       >
         <span className="text-xl">🏠</span>
+      </button>
+      </div>
+
+      <button 
+        onClick={() => setIsExpanded(!isExpanded)} 
+        className={`w-12 h-12 backdrop-blur-xl border rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-all ${isExpanded ? 'bg-white/10 border-white/20' : 'bg-black/40 border-white/10'}`}
+        title={isExpanded ? 'Скрыть меню' : 'Показать меню'}
+      >
+        {isExpanded ? (
+          <ChevronDown className="w-6 h-6 text-white/70" />
+        ) : (
+          <ChevronUp className="w-6 h-6 text-white/70" />
+        )}
       </button>
     </div>
   );
