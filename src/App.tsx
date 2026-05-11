@@ -12,6 +12,7 @@ import { GameHeader } from './components/GameHeader'
 import { Lobby } from './components/Lobby'
 import { ActionButtons } from './components/ActionButtons'
 import { WaitingRoom } from './components/WaitingRoom'
+import { AiServiceInterruptModal } from './components/AiServiceInterruptModal'
 
 const getSuitSymbol = (suit: string) => {
   switch (suit) {
@@ -35,6 +36,7 @@ function App() {
     executeBotTurn,
     aiEnabled,
     toggleAiEnabled,
+    aiPlayBroken,
   } = useGameStore();
 
   const { createRoom, joinRoom } = useMultiplayerStore();
@@ -80,7 +82,12 @@ function App() {
       }
 
       // 2. Если ход бота, но он ничего не делает
-      if (phase === 'PLAYING' && players[currentPlayerIndex]?.isBot && table.length < 4) {
+      if (
+        !useGameStore.getState().aiPlayBroken &&
+        phase === 'PLAYING' &&
+        players[currentPlayerIndex]?.isBot &&
+        table.length < 4
+      ) {
         addLog(`🛡️ Watchdog: подталкиваем бота [${currentPlayerIndex}]`);
         void executeBotTurn(currentPlayerIndex);
       }
@@ -113,7 +120,7 @@ function App() {
       clearInterval(interval);
       clearInterval(backupInterval);
     };
-  }, [phase, currentPlayerIndex, table.length, players, trumpSuit, playedSuits, forceSync, playCard, resetRound, addLog, lobbyView, executeBotTurn]);
+  }, [phase, currentPlayerIndex, table.length, players, trumpSuit, playedSuits, forceSync, playCard, resetRound, addLog, lobbyView, executeBotTurn, aiPlayBroken]);
 
   useEffect(() => {
     if (lobbyView || (phase !== 'ROUND_OVER' && phase !== 'GAME_OVER')) return;
@@ -325,8 +332,14 @@ function App() {
   const showDealerBadge =
     phase === 'PLAYING' || phase === 'ROUND_OVER' || phase === 'GAME_OVER';
 
+  const returnToMenuFromAiInterrupt = () => {
+    useGameStore.getState().leaveGame()
+    setLobbyView(true)
+  }
+
   return (
     <div className={`h-[100dvh] bg-[#020617] flex flex-col overflow-hidden font-sans select-none relative text-white touch-none ${isTurboMode ? 'turbo-active' : ''}`}>
+      {aiPlayBroken && <AiServiceInterruptModal onReturnToMenu={returnToMenuFromAiInterrupt} />}
       <AIThinkingOverlay />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_#064e3b_0%,_#020617_70%)] opacity-40"></div>
       

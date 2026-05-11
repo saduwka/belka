@@ -52,6 +52,8 @@ interface GameStore extends GameState {
   logs: string[];
   aiEnabled: boolean;
   aiThinking: boolean;
+  /** ИИ включён и API настроен, но ход бота не удался — только модалка, без движка. */
+  aiPlayBroken: boolean;
   toggleAiEnabled: () => void;
   executeBotTurn: (playerIndex: number) => Promise<void>;
   /** Сохранить раздачу в AI-бэк и дернуть самообучение (analyze-games). Судья: первый живой игрок. */
@@ -89,6 +91,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   learningGameId: '',
   aiEnabled: readAiEnabled(),
   aiThinking: false,
+  aiPlayBroken: false,
 
   toggleAiEnabled: () => {
     const next = !get().aiEnabled;
@@ -110,7 +113,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   initGame: (roomId, myIndex, name = 'Игрок') => {
     const cleanName = name.trim();
     if (roomId) {
-      set({ isMultiplayer: true, roomId, myPlayerIndex: myIndex ?? -1 });
+      set({ isMultiplayer: true, roomId, myPlayerIndex: myIndex ?? -1, aiPlayBroken: false });
       const stateRef = ref(db, `rooms/${roomId}/state`);
       let isResetting = false;
       let botTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -255,10 +258,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
             const cpIdx = normalizedState.currentPlayerIndex;
             if (cpIdx !== undefined && cpIdx !== -1) {
               const currentPlayer = normalizedState.players[cpIdx];
-              if (currentPlayer?.isBot) {
+              if (currentPlayer?.isBot && !get().aiPlayBroken) {
                 if (botTimeout) clearTimeout(botTimeout);
                 botTimeout = setTimeout(() => {
                   const st = get();
+                  if (st.aiPlayBroken) return;
                   const currentTable = st.table || [];
                   // Фикс #3: убрали currentTable.length < 4 — бот должен ходить даже если стол только что очистился после взятки
                   if (st.phase === 'PLAYING' && st.currentPlayerIndex === cpIdx && st.players[cpIdx].isBot) {
@@ -352,6 +356,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         roundTricks: [],
         matchRoundNumber: 0,
         learningGameId,
+        aiPlayBroken: false,
       });
 
       // Если в одиночной игре первый ход у бота — запускаем его
@@ -684,6 +689,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
         : () => {};
 
     const state = get();
+    if (state.aiPlayBroken) {
+      aiLog('skip: aiPlayBroken');
+      return;
+    }
     if (state.phase !== 'PLAYING') {
       aiLog('skip: phase', state.phase);
       return;
@@ -725,6 +734,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
         get().playCard(playerIndex, best.id);
         aiLog('playCard engine', best.id);
       }
+    };
+
+    /** Только когда ходы шли через API ИИ — движок не подменяем. */
+    const stopAiSessionAfterFailure = (logMsg: string) => {
+      get().addLog(logMsg);
+      set({ aiPlayBroken: true });
     };
 
     const legalIds = getLegalCardIds(
@@ -782,19 +797,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
         get().playCard(playerIndex, res.card);
         aiLog('playCard AI ok', res.card);
       } else if (picked) {
-        get().addLog(`🤖 AI вернул недопустимую карту — ход движком`);
         aiLog('карта не из legalMoves', res.card);
-        playEngineMove();
+        stopAiSessionAfterFailure('🤖 Ответ ИИ не по правилам — партия остановлена');
       } else {
-        get().addLog(`🤖 AI вернул карту не из руки — ход движком`);
         aiLog('AI вернул карту не из руки', res.card, 'рука', hand.map((c) => c.id));
-        playEngineMove();
+        stopAiSessionAfterFailure('🤖 Ответ ИИ не по правилам — партия остановлена');
       }
     } catch (e) {
       console.warn('[executeBotTurn] AI failed', e);
       aiLog('исключение fetch', e);
-      get().addLog('🤖 Ошибка запроса к AI — ход движком');
-      playEngineMove();
+      stopAiSessionAfterFailure('🤖 Ошибка связи с ИИ — партия остановлена');
     } finally {
       set({ aiThinking: false });
     }
@@ -992,6 +1004,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       matchRoundNumber: 0,
       learningGameId: '',
       aiThinking: false,
+      aiPlayBroken: false,
       dealerIndex: 0,
     });
   }
