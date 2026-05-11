@@ -804,11 +804,11 @@ export const useGameStore = create<GameStore>((set, get) => {
         warnedAiFallbackLogged = true;
         if (!state.aiEnabled) {
           get().addLog(
-            '🤖 Запросов к AI нет: нейроботы выключены (иконка в меню) — работает локальная логика.'
+            '🤖 Запросов к ИИ нет: ИИ боты выключены (иконка в меню) — работает локальная логика.'
           );
         } else {
           get().addLog(
-            '🤖 Запросов к AI нет: в бандле пустой VITE_API_URL — задай BELKA_API_URL в GitHub Actions при сборке и передеплой; сейчас бот ходит локальным движком. В консоли нет [BelkaAI]: в CI добавь VITE_AI_DEBUG=1 для отладки.'
+            '🤖 Запросов к ИИ нет: сервис не настроен. Бот ходит локальным движком.'
           );
         }
       }

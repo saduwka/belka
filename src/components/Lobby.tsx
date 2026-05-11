@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useGameStore } from '../store/gameStore';
-import { StressTestModal } from './StressTestModal';
 
 interface LobbyProps {
   playerName: string;
@@ -11,13 +10,14 @@ interface LobbyProps {
   onCreateRoom: () => void;
   onJoinRoom: (id: string) => void;
   isConnecting?: boolean;
+  nameError?: boolean;
 }
 
 export const Lobby = ({
   playerName, setPlayerName, joinId, setJoinId,
-  onStartSingle, onCreateRoom, onJoinRoom, isConnecting
+  onStartSingle, onCreateRoom, onJoinRoom, isConnecting,
+  nameError
 }: LobbyProps) => {
-  const [showStressTest, setShowStressTest] = useState(false);
   const aiEnabled = useGameStore((s) => s.aiEnabled);
   const toggleAiEnabled = useGameStore((s) => s.toggleAiEnabled);
 
@@ -30,8 +30,7 @@ export const Lobby = ({
         
         <div className="mb-6 flex items-center justify-between rounded-2xl border border-white/10 bg-black/40 px-4 py-3 backdrop-blur-xl">
           <div className="text-left">
-            <div className="text-[10px] font-black uppercase tracking-widest text-white/50">Нейроботы</div>
-            <div className="text-[9px] text-white/35">Нужен VITE_API_URL в сборке</div>
+            <div className="text-[10px] font-black uppercase tracking-widest text-white/50">ИИ боты</div>
           </div>
           <button
             type="button"
@@ -48,13 +47,17 @@ export const Lobby = ({
 
         <div className="mb-8 space-y-2 text-left">
            <label className="text-[10px] font-black text-white/30 uppercase tracking-widest ml-4">ВАШЕ ИМЯ</label>
-           <input 
-             type="text" 
-             placeholder="Введите имя..." 
-             value={playerName}
-             onChange={(e) => setPlayerName(e.target.value)}
-             className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all text-sm font-bold placeholder:text-white/10"
-           />
+            <input 
+              type="text" 
+              placeholder="Введите имя..." 
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              className={`w-full bg-white/5 border rounded-2xl px-6 py-4 focus:outline-none focus:ring-2 transition-all text-sm font-bold placeholder:text-white/10 ${
+                nameError 
+                ? 'border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.3)] animate-shake ring-2 ring-red-500/20' 
+                : 'border-white/10 focus:ring-emerald-500/50 shadow-[0_0_15px_rgba(16,185,129,0.05)]'
+              }`}
+            />
         </div>
 
         <div className="space-y-4">
@@ -103,40 +106,6 @@ export const Lobby = ({
         </div>
       </div>
 
-      {/* Stress test button — subtle, for devs */}
-      <button
-        onClick={() => setShowStressTest(true)}
-        style={{
-          position: 'absolute',
-          bottom: '20px',
-          right: '20px',
-          background: 'rgba(255,255,255,0.05)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          color: 'rgba(255,255,255,0.25)',
-          padding: '6px 14px',
-          borderRadius: '999px',
-          fontSize: '10px',
-          fontWeight: 900,
-          letterSpacing: '1.5px',
-          textTransform: 'uppercase',
-          cursor: 'pointer',
-          transition: 'all 0.2s',
-        }}
-        onMouseEnter={e => {
-          e.currentTarget.style.color = 'rgba(255,255,255,0.7)';
-          e.currentTarget.style.borderColor = 'rgba(124,58,237,0.5)';
-          e.currentTarget.style.background = 'rgba(124,58,237,0.1)';
-        }}
-        onMouseLeave={e => {
-          e.currentTarget.style.color = 'rgba(255,255,255,0.25)';
-          e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
-          e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-        }}
-      >
-        🧪 stress test
-      </button>
-
-      <StressTestModal isOpen={showStressTest} onClose={() => setShowStressTest(false)} />
     </div>
   );
 };

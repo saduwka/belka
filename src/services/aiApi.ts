@@ -171,7 +171,7 @@ export async function fetchBotMove(
   options?: { timeoutMs?: number }
 ): Promise<AiBotMoveResponseBody> {
   if (!isAiApiConfigured()) {
-    aiWarn('fetchBotMove: бэк не настроен (нет VITE_API_URL и не включён VITE_LOCAL_PROXY=1 в dev)')
+    aiWarn('fetchBotMove: бэкенд ИИ не настроен')
     throw new Error('AI backend not configured')
   }
 

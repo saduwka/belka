@@ -47,6 +47,7 @@ function App() {
   const [lobbyView, setLobbyView] = useState(true);
   const [joinId, setJoinId] = useState('');
   const [playerName, setPlayerName] = useState(localStorage.getItem('belka_player_name') || '');
+  const [nameError, setNameError] = useState(false);
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -255,11 +256,16 @@ function App() {
     }
   }, [roundEndTime, myPlayerIndex, resetRound]);
 
+  const showToast = (message: string) => {
+    if (toasts.some(t => t.message === message)) return;
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+  };
+
   useEffect(() => {
     if (lastError) {
-      const id = Date.now();
-      setToasts(prev => [...prev, { id, message: lastError.message }]);
-      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+      showToast(lastError.message);
     }
   }, [lastError]);
 
@@ -273,15 +279,27 @@ function App() {
   };
 
   const handleStartSingle = () => {
-    const finalName = playerName.trim() || 'Игрок';
+    const finalName = playerName.trim();
+    if (!finalName) {
+      showToast('⚠️ Пожалуйста, введите имя');
+      setNameError(true);
+      setTimeout(() => setNameError(false), 2000);
+      return;
+    }
     localStorage.setItem('belka_player_name', finalName);
     initGame(undefined, 0, finalName);
     setLobbyView(false);
   };
 
   const handleCreateRoom = async () => {
+    const finalName = playerName.trim();
+    if (!finalName) {
+      showToast('⚠️ Пожалуйста, введите имя');
+      setNameError(true);
+      setTimeout(() => setNameError(false), 2000);
+      return;
+    }
     setIsConnecting(true);
-    const finalName = playerName.trim() || 'Игрок';
     localStorage.setItem('belka_player_name', finalName);
     const id = await createRoom();
     initGame(id, 0, finalName);
@@ -290,32 +308,53 @@ function App() {
   };
 
   const handleJoinRoom = async (id: string) => {
+    const finalName = playerName.trim();
+    if (!finalName) {
+      showToast('⚠️ Пожалуйста, введите имя');
+      setNameError(true);
+      setTimeout(() => setNameError(false), 2000);
+      return;
+    }
     if (!id.trim()) return;
     setIsConnecting(true);
-    const finalName = playerName.trim() || 'Игрок';
     localStorage.setItem('belka_player_name', finalName);
     const r = await joinRoom(id);
     if (r.success) {
       initGame(id, -1, finalName);
       setLobbyView(false);
     } else {
-      setToasts(prev => [...prev, { id: Date.now(), message: (r as any).error || 'Ошибка входа' }]);
+      showToast((r as any).error || 'Ошибка входа');
     }
     setIsConnecting(false);
   };
 
   if (lobbyView) {
     return (
-      <Lobby 
-        playerName={playerName}
-        setPlayerName={setPlayerName}
-        joinId={joinId}
-        setJoinId={setJoinId}
-        onStartSingle={handleStartSingle}
-        onCreateRoom={handleCreateRoom}
-        onJoinRoom={handleJoinRoom}
-        isConnecting={isConnecting}
-      />
+      <div className="h-[100dvh] bg-[#020617] relative overflow-hidden">
+        {/* Toast Overlay */}
+        <div className="fixed top-12 left-1/2 -translate-x-1/2 z-[1000] w-full max-w-xs space-y-2 px-4 pointer-events-none">
+          {toasts.map(t => {
+            const isError = t.message.includes('Ошибка') || t.message.includes('Недопустимый') || t.message.includes('Не все') || t.message.includes('Пожалуйста');
+            return (
+              <div key={t.id} className={`${isError ? 'bg-red-500' : 'bg-slate-800/90 backdrop-blur-md border border-white/10'} text-white p-4 rounded-2xl shadow-2xl font-black text-center text-[10px] uppercase tracking-widest animate-in slide-in-from-top duration-300 pointer-events-auto`}>
+                {t.message}
+              </div>
+            );
+          })}
+        </div>
+
+        <Lobby 
+          playerName={playerName}
+          setPlayerName={(n) => { setPlayerName(n); if (n.trim()) setNameError(false); }}
+          joinId={joinId}
+          setJoinId={setJoinId}
+          onStartSingle={handleStartSingle}
+          onCreateRoom={handleCreateRoom}
+          onJoinRoom={handleJoinRoom}
+          isConnecting={isConnecting}
+          nameError={nameError}
+        />
+      </div>
     );
   }
 

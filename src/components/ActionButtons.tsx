@@ -24,7 +24,7 @@ export const ActionButtons = ({ isMultiplayer, aiEnabled, onAiToggle, isAutoPlay
         type="button"
         onClick={onAiToggle} 
         className={`w-12 h-12 backdrop-blur-xl border rounded-full flex items-center justify-center shadow-2xl active:scale-90 transition-all ${aiEnabled ? 'border-blue-400/40 bg-blue-500/30 shadow-[0_0_18px_rgba(59,130,246,0.35)]' : 'border-white/10 bg-black/40'}`}
-        title={aiEnabled ? 'Нейроботы: вкл.' : 'Нейроботы: выкл. (локальная логика)'}
+        title={aiEnabled ? 'ИИ боты: вкл.' : 'ИИ боты: выкл. (локальная логика)'}
       >
         <span className="text-lg">🧠</span>
       </button>
