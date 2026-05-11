@@ -28,6 +28,9 @@ function readAiEnabled(): boolean {
 
 const DEFAULT_AI_MOVE_TIMEOUT_MS = 12_000;
 
+/** Не даём двум тикам интервала параллельно дергать bot-move */
+let aiRecoveryFetchInFlight = false;
+
 interface GameStore extends GameState {
   isMultiplayer: boolean;
   roomId: string | null;
@@ -52,15 +55,56 @@ interface GameStore extends GameState {
   logs: string[];
   aiEnabled: boolean;
   aiThinking: boolean;
-  /** ИИ включён и API настроен, но ход бота не удался — только модалка, без движка. */
-  aiPlayBroken: boolean;
+  /** Ход бота ждёт успешного bot-move; модалка + повторы запроса, игра не сдвигается движком. */
+  aiRecoveryPlayerIndex: number | null;
+  /** Сколько неудачных повторов после показа модалки (для UI). */
+  aiRecoveryFailedPolls: number;
   toggleAiEnabled: () => void;
   executeBotTurn: (playerIndex: number) => Promise<void>;
+  /** Повторная попытка bot-move пока `aiRecoveryPlayerIndex !== null`. */
+  retryAiBotMoveFromRecovery: () => Promise<void>;
   /** Сохранить раздачу в AI-бэк и дернуть самообучение (analyze-games). Судья: первый живой игрок. */
   persistLearningRoundIfJudge: () => Promise<void>;
 }
 
-export const useGameStore = create<GameStore>((set, get) => ({
+export const useGameStore = create<GameStore>((set, get) => {
+  const attemptAiMoveOrFalse = async (playerIndex: number): Promise<boolean> => {
+    const state = get();
+    if (state.phase !== 'PLAYING' || state.currentPlayerIndex !== playerIndex) return false;
+    const player = state.players[playerIndex];
+    if (!player?.isBot) return false;
+    const hand = player.hand || [];
+    if (hand.length === 0 || state.table.length >= 4) return false;
+    const legalIds = getLegalCardIds(hand, state.table, state.trumpSuit, state.playedSuits || []);
+    if (legalIds.length === 0) return false;
+    const timeoutMs = state.isTurboMode ? 4000 : DEFAULT_AI_MOVE_TIMEOUT_MS;
+    try {
+      const res = await fetchBotMove(
+        {
+          playerIndex,
+          trickLeaderIndex: state.firstPlayerInTrick,
+          hand: hand.map((c) => c.id),
+          legalMoves: legalIds,
+          table: state.table.map((c) => c.id),
+          trumpSuit: state.trumpSuit ?? 'CLUBS',
+          playedSuits: state.playedSuits || [],
+          scores: state.scores,
+          eyes: state.eyes,
+        },
+        { timeoutMs }
+      );
+      const picked = hand.find((c) => c.id === res.card);
+      if (picked && legalIds.includes(res.card)) {
+        get().playCard(playerIndex, res.card);
+        return true;
+      }
+    } catch {
+      return false;
+    }
+    return false;
+  };
+
+  return {
   players: [],
   currentPlayerIndex: 0,
   trumpSuit: null,
@@ -91,7 +135,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   learningGameId: '',
   aiEnabled: readAiEnabled(),
   aiThinking: false,
-  aiPlayBroken: false,
+  aiRecoveryPlayerIndex: null,
+  aiRecoveryFailedPolls: 0,
 
   toggleAiEnabled: () => {
     const next = !get().aiEnabled;
@@ -111,9 +156,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   toggleTurboMode: () => set(state => ({ isTurboMode: !state.isTurboMode })),
 
   initGame: (roomId, myIndex, name = 'Игрок') => {
+    aiRecoveryFetchInFlight = false;
     const cleanName = name.trim();
     if (roomId) {
-      set({ isMultiplayer: true, roomId, myPlayerIndex: myIndex ?? -1, aiPlayBroken: false });
+      set({ isMultiplayer: true, roomId, myPlayerIndex: myIndex ?? -1, aiRecoveryPlayerIndex: null, aiRecoveryFailedPolls: 0 });
       const stateRef = ref(db, `rooms/${roomId}/state`);
       let isResetting = false;
       let botTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -258,11 +304,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
             const cpIdx = normalizedState.currentPlayerIndex;
             if (cpIdx !== undefined && cpIdx !== -1) {
               const currentPlayer = normalizedState.players[cpIdx];
-              if (currentPlayer?.isBot && !get().aiPlayBroken) {
+              if (currentPlayer?.isBot && get().aiRecoveryPlayerIndex !== cpIdx) {
                 if (botTimeout) clearTimeout(botTimeout);
                 botTimeout = setTimeout(() => {
                   const st = get();
-                  if (st.aiPlayBroken) return;
+                  if (st.aiRecoveryPlayerIndex === cpIdx) return;
                   const currentTable = st.table || [];
                   // Фикс #3: убрали currentTable.length < 4 — бот должен ходить даже если стол только что очистился после взятки
                   if (st.phase === 'PLAYING' && st.currentPlayerIndex === cpIdx && st.players[cpIdx].isBot) {
@@ -356,7 +402,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         roundTricks: [],
         matchRoundNumber: 0,
         learningGameId,
-        aiPlayBroken: false,
+        aiRecoveryPlayerIndex: null,
+        aiRecoveryFailedPolls: 0,
       });
 
       // Если в одиночной игре первый ход у бота — запускаем его
@@ -689,8 +736,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         : () => {};
 
     const state = get();
-    if (state.aiPlayBroken) {
-      aiLog('skip: aiPlayBroken');
+    if (state.aiRecoveryPlayerIndex === playerIndex) {
+      aiLog('skip: идёт фоновое восстановление bot-move');
       return;
     }
     if (state.phase !== 'PLAYING') {
@@ -736,12 +783,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
     };
 
-    /** Только когда ходы шли через API ИИ — движок не подменяем. */
-    const stopAiSessionAfterFailure = (logMsg: string) => {
-      get().addLog(logMsg);
-      set({ aiPlayBroken: true });
-    };
-
     const legalIds = getLegalCardIds(
       hand,
       state.table,
@@ -774,39 +815,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
     set({ aiThinking: true });
     try {
-      const timeoutMs = state.isTurboMode ? 4000 : DEFAULT_AI_MOVE_TIMEOUT_MS;
-      const res = await fetchBotMove(
-        {
-          playerIndex,
-          trickLeaderIndex: state.firstPlayerInTrick,
-          hand: hand.map((c) => c.id),
-          legalMoves: legalIds,
-          table: state.table.map((c) => c.id),
-          trumpSuit: state.trumpSuit ?? 'CLUBS',
-          playedSuits: state.playedSuits || [],
-          scores: state.scores,
-          eyes: state.eyes,
-        },
-        { timeoutMs }
-      );
-      if (!legalIds.includes(res.card)) {
-        aiLog('AI вернул карту вне legalMoves', res.card, legalIds);
-      }
-      const picked = hand.find((c) => c.id === res.card);
-      if (picked && legalIds.includes(res.card)) {
-        get().playCard(playerIndex, res.card);
-        aiLog('playCard AI ok', res.card);
-      } else if (picked) {
-        aiLog('карта не из legalMoves', res.card);
-        stopAiSessionAfterFailure('🤖 Ответ ИИ не по правилам — партия остановлена');
+      const ok = await attemptAiMoveOrFalse(playerIndex);
+      if (ok) {
+        aiLog('playCard AI ok');
       } else {
-        aiLog('AI вернул карту не из руки', res.card, 'рука', hand.map((c) => c.id));
-        stopAiSessionAfterFailure('🤖 Ответ ИИ не по правилам — партия остановлена');
+        console.warn('[executeBotTurn] AI failed or invalid response — recovery mode');
+        aiLog('вход в режим восстановления');
+        get().addLog('🤖 Не удалось получить ход ИИ — ждём ответ сервиса, партия на паузе');
+        set({ aiRecoveryPlayerIndex: playerIndex, aiRecoveryFailedPolls: 0 });
       }
-    } catch (e) {
-      console.warn('[executeBotTurn] AI failed', e);
-      aiLog('исключение fetch', e);
-      stopAiSessionAfterFailure('🤖 Ошибка связи с ИИ — партия остановлена');
     } finally {
       set({ aiThinking: false });
     }
@@ -986,6 +1003,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   leaveGame: () => {
+    aiRecoveryFetchInFlight = false;
     const watchdog = (window as any)._belkaWatchdog;
     if (watchdog) {
       clearInterval(watchdog);
@@ -1004,8 +1022,35 @@ export const useGameStore = create<GameStore>((set, get) => ({
       matchRoundNumber: 0,
       learningGameId: '',
       aiThinking: false,
-      aiPlayBroken: false,
+      aiRecoveryPlayerIndex: null,
+      aiRecoveryFailedPolls: 0,
       dealerIndex: 0,
     });
-  }
-}));
+  },
+
+  retryAiBotMoveFromRecovery: async () => {
+    if (aiRecoveryFetchInFlight) return;
+    const idx = get().aiRecoveryPlayerIndex;
+    if (idx === null) return;
+    const st = get();
+    if (st.phase !== 'PLAYING' || st.currentPlayerIndex !== idx || !st.players[idx]?.isBot) {
+      set({ aiRecoveryPlayerIndex: null, aiRecoveryFailedPolls: 0 });
+      return;
+    }
+    aiRecoveryFetchInFlight = true;
+    set({ aiThinking: true });
+    try {
+      const ok = await attemptAiMoveOrFalse(idx);
+      if (ok) {
+        set({ aiRecoveryPlayerIndex: null, aiRecoveryFailedPolls: 0 });
+        get().addLog('🤖 Связь с ИИ восстановлена — ход принят');
+      } else {
+        set((s) => ({ aiRecoveryFailedPolls: s.aiRecoveryFailedPolls + 1 }));
+      }
+    } finally {
+      aiRecoveryFetchInFlight = false;
+      set({ aiThinking: false });
+    }
+  },
+};
+});

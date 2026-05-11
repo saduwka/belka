@@ -36,7 +36,9 @@ function App() {
     executeBotTurn,
     aiEnabled,
     toggleAiEnabled,
-    aiPlayBroken,
+    aiRecoveryPlayerIndex,
+    aiRecoveryFailedPolls,
+    aiThinking,
   } = useGameStore();
 
   const { createRoom, joinRoom } = useMultiplayerStore();
@@ -83,7 +85,7 @@ function App() {
 
       // 2. Если ход бота, но он ничего не делает
       if (
-        !useGameStore.getState().aiPlayBroken &&
+        useGameStore.getState().aiRecoveryPlayerIndex !== currentPlayerIndex &&
         phase === 'PLAYING' &&
         players[currentPlayerIndex]?.isBot &&
         table.length < 4
@@ -120,7 +122,25 @@ function App() {
       clearInterval(interval);
       clearInterval(backupInterval);
     };
-  }, [phase, currentPlayerIndex, table.length, players, trumpSuit, playedSuits, forceSync, playCard, resetRound, addLog, lobbyView, executeBotTurn, aiPlayBroken]);
+  }, [phase, currentPlayerIndex, table.length, players, trumpSuit, playedSuits, forceSync, playCard, resetRound, addLog, lobbyView, executeBotTurn, aiRecoveryPlayerIndex]);
+
+  /** Пока модалка ждёт bot-move — фоновые повторы до успешного ответа */
+  useEffect(() => {
+    if (aiRecoveryPlayerIndex === null) return;
+    const turbo = useGameStore.getState().isTurboMode;
+    const firstDelay = turbo ? 500 : 2000;
+    const period = turbo ? 2500 : 5000;
+    const t1 = setTimeout(() => {
+      void useGameStore.getState().retryAiBotMoveFromRecovery();
+    }, firstDelay);
+    const id = setInterval(() => {
+      void useGameStore.getState().retryAiBotMoveFromRecovery();
+    }, period);
+    return () => {
+      clearTimeout(t1);
+      clearInterval(id);
+    };
+  }, [aiRecoveryPlayerIndex]);
 
   useEffect(() => {
     if (lobbyView || (phase !== 'ROUND_OVER' && phase !== 'GAME_OVER')) return;
@@ -339,7 +359,13 @@ function App() {
 
   return (
     <div className={`h-[100dvh] bg-[#020617] flex flex-col overflow-hidden font-sans select-none relative text-white touch-none ${isTurboMode ? 'turbo-active' : ''}`}>
-      {aiPlayBroken && <AiServiceInterruptModal onReturnToMenu={returnToMenuFromAiInterrupt} />}
+      {aiRecoveryPlayerIndex !== null && (
+        <AiServiceInterruptModal
+          failedPolls={aiRecoveryFailedPolls}
+          isFetching={aiThinking}
+          onReturnToMenu={returnToMenuFromAiInterrupt}
+        />
+      )}
       <AIThinkingOverlay />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_#064e3b_0%,_#020617_70%)] opacity-40"></div>
       
